@@ -6,7 +6,6 @@ function sendConnectionRequest() {
   if (connectBtn) {
     connectBtn.click();
 
-    // Wait for modal to appear
     setTimeout(() => {
       const addNoteBtn = document.querySelector('button[aria-label="Add a note"]');
       if (addNoteBtn) {
@@ -27,7 +26,7 @@ function sendConnectionRequest() {
       }
     }, 1000);
   } else {
-    console.log("⚠️ No Connect button found on this profile.");
+    console.log("No Connect button found on this profile.");
   }
 }
 
