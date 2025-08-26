@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <h3>Extension Settings</h3>
+    <label>
+      Scrape URL: <input type="text" id="url" />
+    </label>
+    <button id="save">Save</button>
+
+    <script>
+      const saveBtn = document.getElementById("save");
+      saveBtn.onclick = () => {
+        const url = document.getElementById("url").value;
+        chrome.storage.sync.set({ targetUrl: url }, () => {
+          alert("URL saved!");
+        });
+      };
+    </script>
+  </body>
+</html>
