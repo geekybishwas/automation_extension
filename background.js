@@ -6,6 +6,8 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.action === "connectMultiple" && msg.urls?.length) {
     let index = 0;
 
+    stopRequested = false;
+
     function next() {
       if (stopRequested) {
         console.log("Stop requested. Halting sequence.");
@@ -85,7 +87,6 @@ function extractNameFromUrl(url) {
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "stopProcessing") {
     console.log("Stop signal received from panel");
