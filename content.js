@@ -181,13 +181,77 @@ function createStatusPanel(total,index) {
     document.body.appendChild(panel);
   }
 
+  if (!document.getElementById("linkedin-spinner-style")) {
+    const style = document.createElement("style");
+    style.id = "linkedin-spinner-style";
+    style.textContent = `
+      .linkedin-spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #ccc;
+        border-top: 2px solid #0073b1; /* LinkedIn blue */
+        border-radius: 50%;
+        animation: linkedin-spin 0.8s linear infinite;
+      }
+  
+      @keyframes linkedin-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  
+
   panel.innerHTML = `
-    <div style="padding:10px;border-bottom:1px solid #eee;font-weight:600;display:flex;justify-content:space-between">
-      <span id="linkedin-task-header">Executing task ${index} of ${total}</span>
-      <span style="cursor:pointer" onclick="document.getElementById('linkedin-status-panel').remove()">✖</span>
-    </div>
-    <div id="linkedin-status-list" style="max-height:300px;overflow-y:auto;padding:8px"></div>
-  `;
+  <div style="
+      padding: 8px 8px;
+      border-bottom: 1px solid #f0f0f0;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: #f8f8f8;
+      color: #333;
+    ">
+    <div></div>
+      <div style="display: flex; align-items: center;">
+        <button id="stop-btn" style="
+          margin-right: 8px;
+          width: 18px;
+          height: 18px;
+          background-color: transparent;
+          border: 2px solid #dc3545;
+          border-radius: 4px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          color: #dc3545;
+        ">
+          <i data-lucide="square" width="12" height="12" stroke-width="2.5"></i>
+        </button>
+        <span id="close-panel" style="
+          cursor: pointer;
+          font-size: 1.3em;
+          color: #777;
+          padding: 2px 7px;
+          border-radius: 4px;
+          transition: background-color 0.2s ease;
+        ">×</span>
+      </div>
+  </div>
+  <div id="linkedin-status-list" style="max-height:300px;overflow-y:auto;padding:8px"></div>
+`;
+
+// Handle Stop button
+document.getElementById("stop-btn")?.addEventListener("click", () => {
+  console.log("Stop button clicked");
+  chrome.runtime.sendMessage({ action: "stopProcessing" });
+});
+
+
 }
 
 function addStatusItem(index, total, name, headline) {
@@ -207,7 +271,9 @@ function addStatusItem(index, total, name, headline) {
       <div style="font-weight:500">${name || "Unknown"}</div>
       <div style="font-size:12px;color:#666">${headline || ""}</div>
     </div>
-    <span id="linkedin-status-${index}">⏳</span>
+    <span id="linkedin-status-${index}" style="display:flex;align-items:center;justify-content:center;">
+    <div class="linkedin-spinner"></div>
+   </span>
   `;
 
   list.appendChild(item);

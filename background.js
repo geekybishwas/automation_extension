@@ -1,9 +1,17 @@
+
+let stopRequested = false;
+
 // background.js - Handle external messages and tab management
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.action === "connectMultiple" && msg.urls?.length) {
     let index = 0;
 
     function next() {
+      if (stopRequested) {
+        console.log("Stop requested. Halting sequence.");
+        return sendResponse({ status: "stopped" });
+      }
+
       if (index >= msg.urls.length) {
         return sendResponse({ status: "done" });
       }
@@ -77,3 +85,11 @@ function extractNameFromUrl(url) {
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "stopProcessing") {
+    console.log("Stop signal received from panel");
+    stopRequested = true;
+    sendResponse({ status: "stopping" });
+  }
+});
