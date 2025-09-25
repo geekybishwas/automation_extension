@@ -3,8 +3,10 @@ let stopRequested = false;
 
 // background.js - Handle external messages and tab management
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
-  if (msg.action === "connectMultiple" && msg.urls?.length) {
+  if (msg.action === "connectMultiple" && Array.isArray(msg.connections) && msg.connections.length) {
+    const connections = msg.connections;
     let index = 0;
+    stopRequested = false;
 
     stopRequested = false;
 
@@ -14,13 +16,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         return sendResponse({ status: "stopped" });
       }
 
-      if (index >= msg.urls.length) {
+      if (index >= connections.length) {
         return sendResponse({ status: "done" });
       }
 
-      console.log(`Processing connection ${index + 1}/${msg.urls.length}: ${msg.urls[index]}`);
+      const { url, note } = connections[index];
+
+      console.log(`Processing connection ${index + 1}/${connections.length}: ${url}`);
       
-      chrome.tabs.create({ url: msg.urls[index], active: false }, (tab) => {
+      chrome.tabs.create({ url: url, active: true }, (tab) => {
         if (chrome.runtime.lastError) {
           console.error('Tab creation error:', chrome.runtime.lastError);
           index++;
@@ -39,7 +43,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
             chrome.tabs.sendMessage(tab.id, {
               action: "updateStatusHeader",
               current: index + 1,
-              total: msg.urls.length
+              total: connections.length
             });
             
             // Wait a bit more for content script to be ready
@@ -47,10 +51,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
               // Send parameters to content.js
               chrome.tabs.sendMessage(tab.id, {
                 action: "sendConnectionRequest",
-                note: msg.note || "Hi, I'd love to connect!",
+                note: note || "Hi, I'd like to connect with you on LinkedIn.",
                 index,
-                total: msg.urls.length,
-                name: extractNameFromUrl(msg.urls[index]),
+                total: connections.length,
+                name: extractNameFromUrl(url),
               }, (response) => {
                 console.log('Content script response:', response);
                 if (chrome.runtime.lastError) {

@@ -58,14 +58,14 @@ async function sendConnectionRequest(note, index) {
   const connectBtn = await waitForConnectButton();
   if (!connectBtn) {
     console.log('Connect button not found');
+    updateStatusItem(index, 'failed');
     return false;
   }
 
   console.log('Connect button found, clicking...');
   connectBtn.click();
   
-  // Wait for modal to appear
-  await delay(2000);
+  await delay(2000); // Wait for modal to appear
   
   // Look for "Add a note" button
   const addNoteBtn = await waitForElement('button[aria-label="Add a note"]', 3000);
@@ -73,7 +73,7 @@ async function sendConnectionRequest(note, index) {
     console.log('Add note button found, clicking...');
     addNoteBtn.click();
     await delay(1000);
-    
+
     // Fill in the message
     const textarea = await waitForElement('textarea[name="message"]', 2000);
     if (textarea) {
@@ -85,19 +85,25 @@ async function sendConnectionRequest(note, index) {
       await delay(500);
     }
   }
-  
-  // Find and click Send button
+
+  // Click Send button
   console.log('Looking for Send button...');
   const sendBtn = await waitForSendButton();
-  if (sendBtn) {
-    console.log('Send button found, clicking...');
-    sendBtn.click();
-    await delay(2000);
-    return true;
-  } else {
+  if (!sendBtn) {
     console.log('Send button not found');
+    updateStatusItem(index, 'failed');
     return false;
   }
+
+  sendBtn.click();
+  await delay(2000); // wait for result
+
+  // Check result
+  const result = await detectConnectionResult();
+  updateStatusItem(index, result);
+
+  console.log(`Connection request result for index ${index}: ${result}`);
+  return result === 'success';
 }
 
 function waitForPageLoad() {
@@ -289,9 +295,35 @@ function updateStatusHeader(current, total) {
 function updateStatusItem(index, status) {
   const el = document.getElementById(`linkedin-status-${index}`);
   if (!el) return;
+
   if (status === "success") el.textContent = "✅";
+  else if (status === "limitReached") el.textContent = "⛔"; // Limit reached
   else if (status === "failed") el.textContent = "⚠️";
-  else el.textContent = "⏳";
+  else el.innerHTML = `<div class="linkedin-spinner"></div>`;
+}
+
+// Detect success, failure, or limit reached
+async function detectConnectionResult() {
+  // Check LinkedIn limit modal
+  const modal = document.querySelector('.artdeco-modal__content, .msg-overlay-bubble-header');
+  if (modal) {
+    const text = modal.innerText.toLowerCase();
+    if (text.includes('you’ve used all your monthly custom invites') || text.includes('cannot send')) {
+      return 'limitReached';
+    }
+  }
+
+  // Check toast notifications
+  const toast = document.querySelector('[role="alert"], .artdeco-toast-item');
+  if (toast) {
+    const text = toast.innerText.toLowerCase();
+    if (text.includes('invitation sent')) return 'success';
+    if (text.includes('limit') || text.includes('cannot send')) return 'limitReached';
+    return 'failed';
+  }
+
+  // Unknown result
+  return 'unknown';
 }
 
 
