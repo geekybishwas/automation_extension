@@ -18,155 +18,246 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleConnectionRequest({ note, index, total, name }) {
   console.log(`Starting connection request for ${name} (${index + 1}/${total})`);
+  let finalStatus = 'failed'; // Default to failed
   
   try {
-    // Wait for page to be fully loaded
     await waitForPageLoad();
-    
-    createStatusPanel(total, index+1);
+    createStatusPanel(total, index + 1);
    
-    // const profileName =
-    //   document.querySelector(".pv-text-details__left-panel h1")?.innerText.trim() ||
-    //   name || "Unknown";
-    const name =
-      document.querySelector("h1")?.innerText.trim() || "Unknown Profile";
-    
+    const profileName = document.querySelector("h1")?.innerText.trim() || name || "Unknown Profile";
+    const headline = document.querySelector(".text-body-medium.break-words")?.innerText.trim() || "Headline not available";
 
-    // Scrape headline/job title (LinkedIn often puts it here)
-    const headline =
-      document.querySelector(".text-body-medium.break-words")?.innerText.trim() ||
-      "Headline not available";
-
-    // Add row to panel
-    addStatusItem(index, total, name, headline);
+    addStatusItem(index, total, profileName, headline);
     
-    const result = await sendConnectionRequest(note, index);
-    updateStatusItem(index, result ? 'success' : 'failed');
+    // Attempt to send connection request
+    const requestResult = await sendConnectionRequest(note, index);
+    finalStatus = requestResult.status; // Get status from the detailed result
     
-    return { index, status: result ? 'success' : 'failed' };
   } catch (error) {
     console.error('Connection error:', error);
-    updateStatusItem(index, 'failed');
-    return { index, status: 'error', error: error.message };
+    finalStatus = 'error'; // Catch any unexpected errors during the process
+  } finally {
+    updateStatusItem(index, finalStatus); // Always update the status item
+    return { index, status: finalStatus }; // Return final status
   }
 }
 
 async function sendConnectionRequest(note, index) {
   console.log('Looking for Connect button...');
-  
-  // Wait for Connect button to be available
-  const connectBtn = await waitForConnectButton();
-  if (!connectBtn) {
-    console.log('Connect button not found');
-    updateStatusItem(index, 'failed');
-    return false;
-  }
+  let currentStatus = 'processing';
 
-  console.log('Connect button found, clicking...');
-  connectBtn.click();
-  
-  await delay(2000); // Wait for modal to appear
-  
-  // Look for "Add a note" button
-  const addNoteBtn = await waitForElement('button[aria-label="Add a note"]', 3000);
-  if (addNoteBtn && note) {
-    console.log('Add note button found, clicking...');
-    addNoteBtn.click();
-    await delay(1000);
-
-    // Fill in the message
-    const textarea = await waitForElement('textarea[name="message"]', 2000);
-    if (textarea) {
-      console.log('Textarea found, filling message...');
-      textarea.focus();
-      textarea.value = note;
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      textarea.dispatchEvent(new Event('change', { bubbles: true }));
-      await delay(500);
+  try {
+    const connectBtn = await waitForConnectButton();
+    if (!connectBtn) {
+      console.log('Connect button not found or already connected/pending.');
+      // Check if it's already "Pending" or "Message"
+      if (document.querySelector('button[aria-label*="Pending"]')) {
+        currentStatus = 'pending_already';
+        return { status: currentStatus, message: 'Invitation already sent (Pending).' };
+      }
+      if (document.querySelector('button[aria-label*="Message"]')) {
+        currentStatus = 'connected_already';
+        return { status: currentStatus, message: 'Already connected.' };
+      }
+      currentStatus = 'failed';
+      return { status: currentStatus, message: 'Connect button not found.' };
     }
+
+    console.log('Connect button found, clicking...');
+    connectBtn.click();
+    await delay(2000); // Wait for modal to appear
+
+    const addNoteBtn = await waitForElement('button[aria-label="Add a note"], button:has(span[title="Add a note"])', 3000); // More robust selector
+    if (addNoteBtn && note) {
+      console.log('Add note button found, clicking...');
+      addNoteBtn.click();
+      await delay(1000);
+
+      const textarea = await waitForElement('textarea[name="message"]', 2000);
+      if (textarea) {
+        console.log('Textarea found, filling message...');
+        textarea.focus();
+        textarea.value = note;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(500);
+      } else {
+        console.warn('Note textarea not found.');
+        // Proceed without note if textarea is missing
+      }
+    } else if (note) {
+      console.warn('Add note button not found, proceeding without note.');
+    }
+
+    console.log('Looking for Send button...');
+    const sendBtn = await waitForSendButton();
+    if (!sendBtn) {
+      currentStatus = 'failed';
+      return { status: currentStatus, message: 'Send button not found.' };
+    }
+
+    sendBtn.click();
+    await delay(3000); // Increased delay for UI to settle and show result
+
+    const result = await detectConnectionResult();
+    currentStatus = result;
+    return { status: currentStatus, message: `Connection request result: ${currentStatus}` };
+
+  } catch (error) {
+    console.error('Error during sendConnectionRequest:', error);
+    return { status: 'error', message: error.message };
   }
-
-  // Click Send button
-  console.log('Looking for Send button...');
-  const sendBtn = await waitForSendButton();
-  if (!sendBtn) {
-    console.log('Send button not found');
-    updateStatusItem(index, 'failed');
-    return false;
-  }
-
-  sendBtn.click();
-  await delay(2000); // wait for result
-
-  // Check result
-  const result = await detectConnectionResult();
-  updateStatusItem(index, result);
-
-  console.log(`Connection request result for index ${index}: ${result}`);
-  return result === 'success';
 }
 
 function waitForPageLoad() {
   return new Promise((resolve) => {
-    if (document.readyState === 'complete') {
-      setTimeout(resolve, 2000); // Extra delay for LinkedIn's dynamic content
-    } else {
-      window.addEventListener('load', () => {
-        setTimeout(resolve, 2000);
-      });
-    }
+  if (document.readyState === 'complete') {
+  setTimeout(resolve, 2000); // Extra delay for LinkedIn's dynamic content
+  } else {
+  window.addEventListener('load', () => {
+  setTimeout(resolve, 2000);
   });
+  }
+  });
+  }
+  
+  function waitForConnectButton() {
+  return waitForElement(() => {
+  const buttons = document.querySelectorAll('button');
+  return Array.from(buttons).find(btn => {
+  const text = btn.innerText.trim().toLowerCase();
+  return text === 'connect' && btn.offsetParent !== null; // Make sure it's visible
+  });
+  }, 5000);
+  }
+  
+  function waitForSendButton() {
+  return waitForElement(() => {
+  const buttons = document.querySelectorAll('button');
+  return Array.from(buttons).find(btn => {
+  const text = btn.innerText.trim().toLowerCase();
+  return (text === 'send' || text === 'send invitation') && btn.offsetParent !== null;
+  });
+  }, 5000);
+  }
+
+async function detectConnectionResult() {
+  // Check for success: "Invitation sent" toast or "Pending" button
+  const successToast = document.querySelector('[role="alert"] .artdeco-toast-item__content, .artdeco-toast-item span[title*="Invitation sent"]');
+  if (successToast && successToast.innerText.toLowerCase().includes('invitation sent')) {
+    return 'success';
+  }
+
+  // Check for a "Pending" button on the profile after interaction
+  if (await waitForElement('button[aria-label*="Pending"]', 1000)) {
+    return 'success'; // Treat 'Pending' as a successful send
+  }
+
+  // Check for LinkedIn limit modal or toast
+  const modalOrToast = document.querySelector('.artdeco-modal__content, .msg-overlay-bubble-header, [role="alert"], .artdeco-toast-item');
+  if (modalOrToast) {
+    const text = modalOrToast.innerText.toLowerCase();
+    if (text.includes('you’ve used all your monthly custom invites') || text.includes('cannot send any more invitations')) {
+      return 'limitReached';
+    }
+    if (text.includes('something went wrong') || text.includes('failed to send')) {
+      return 'failed';
+    }
+  }
+  
+  // Check for generic error messages in the modal
+  const errorInModal = document.querySelector('.artdeco-modal__content .artdeco-inline-feedback--error');
+  if (errorInModal) {
+    const text = errorInModal.innerText.toLowerCase();
+    if (text.includes('limit reached') || text.includes('cannot send')) {
+      return 'limitReached';
+    }
+    return 'failed';
+  }
+
+  // If we reach here, and no explicit success/failure/limit was detected,
+  // it's an unknown state. Consider it a failure for safety.
+  return 'failed'; 
 }
 
-function waitForConnectButton() {
-  return waitForElement(() => {
-    const buttons = document.querySelectorAll('button');
-    return Array.from(buttons).find(btn => {
-      const text = btn.innerText.trim().toLowerCase();
-      return text === 'connect' && btn.offsetParent !== null; // Make sure it's visible
-    });
-  }, 5000);
-}
+// ... (other functions like waitForElement, delay, createStatusPanel, addStatusItem, updateStatusHeader remain similar)
 
-function waitForSendButton() {
-  return waitForElement(() => {
-    const buttons = document.querySelectorAll('button');
-    return Array.from(buttons).find(btn => {
-      const text = btn.innerText.trim().toLowerCase();
-      return (text === 'send' || text === 'send invitation') && btn.offsetParent !== null;
-    });
-  }, 5000);
+function updateStatusItem(index, status, message = '') { // Added message parameter
+  const el = document.getElementById(`linkedin-status-${index}`);
+  if (!el) return;
+
+  let icon = '';
+  let color = '';
+  let tooltip = status;
+
+  switch (status) {
+    case 'success':
+      icon = '✅';
+      color = '#28a745'; // Green
+      tooltip = 'Invitation Sent';
+      break;
+    case 'limitReached':
+      icon = '🚫';
+      color = '#ffc107'; // Yellow/Orange
+      tooltip = 'LinkedIn Invitation Limit Reached';
+      break;
+    case 'failed':
+      icon = '❌';
+      color = '#dc3545'; // Red
+      tooltip = message || 'Failed to send invitation';
+      break;
+    case 'error': // For unexpected script errors
+      icon = '🚨';
+      color = '#dc3545';
+      tooltip = message || 'An unexpected error occurred';
+      break;
+    case 'pending_already':
+      icon = '🕒';
+      color = '#007bff'; // Blue
+      tooltip = 'Invitation already pending';
+      break;
+    case 'connected_already':
+      icon = '🤝';
+      color = '#6f42c1'; // Purple
+      tooltip = 'Already connected';
+      break;
+    default:
+      icon = `<div class="linkedin-spinner"></div>`; // Default processing spinner
+      color = '#0073b1';
+      tooltip = 'Processing...';
+  }
+  
+  el.innerHTML = `<span style="color:${color};font-size:1.2em;" title="${tooltip}">${icon}</span>`;
 }
 
 function waitForElement(selectorOrFunction, timeout = 10000) {
   return new Promise((resolve) => {
-    const isFunction = typeof selectorOrFunction === 'function';
-    
-    // Try to find element immediately
-    const element = isFunction ? selectorOrFunction() : document.querySelector(selectorOrFunction);
-    if (element) {
-      resolve(element);
-      return;
-    }
+  const isFunction = typeof selectorOrFunction === 'function';
+  // Try to find element immediately
+const element = isFunction ? selectorOrFunction() : document.querySelector(selectorOrFunction);
+if (element) {
+  resolve(element);
+  return;
+}
 
-    const observer = new MutationObserver(() => {
-      const element = isFunction ? selectorOrFunction() : document.querySelector(selectorOrFunction);
-      if (element) {
-        observer.disconnect();
-        resolve(element);
-      }
-    });
+const observer = new MutationObserver(() => {
+  const element = isFunction ? selectorOrFunction() : document.querySelector(selectorOrFunction);
+  if (element) {
+    observer.disconnect();
+    resolve(element);
+  }
+});
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+observer.observe(document.body, {
+  childList: true,
+  subtree: true
+});
 
-    setTimeout(() => {
-      observer.disconnect();
-      resolve(null);
-    }, timeout);
-  });
+setTimeout(() => {
+  observer.disconnect();
+  resolve(null);
+}, timeout);
+});
 }
 
 function createStatusPanel(total,index) {
@@ -301,31 +392,6 @@ function updateStatusItem(index, status) {
   else if (status === "failed") el.textContent = "⚠️";
   else el.innerHTML = `<div class="linkedin-spinner"></div>`;
 }
-
-// Detect success, failure, or limit reached
-async function detectConnectionResult() {
-  // Check LinkedIn limit modal
-  const modal = document.querySelector('.artdeco-modal__content, .msg-overlay-bubble-header');
-  if (modal) {
-    const text = modal.innerText.toLowerCase();
-    if (text.includes('you’ve used all your monthly custom invites') || text.includes('cannot send')) {
-      return 'limitReached';
-    }
-  }
-
-  // Check toast notifications
-  const toast = document.querySelector('[role="alert"], .artdeco-toast-item');
-  if (toast) {
-    const text = toast.innerText.toLowerCase();
-    if (text.includes('invitation sent')) return 'success';
-    if (text.includes('limit') || text.includes('cannot send')) return 'limitReached';
-    return 'failed';
-  }
-
-  // Unknown result
-  return 'unknown';
-}
-
 
 function formatName(name) {
   if (!name || name === 'Unknown Profile') return 'LinkedIn Profile';
