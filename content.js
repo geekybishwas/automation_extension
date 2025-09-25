@@ -3,17 +3,21 @@ console.log('LinkedIn Connector content script loaded');
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Content script received message:', message);
-  
-  if (message.action === 'sendConnectionRequest') {
-    handleConnectionRequest(message);
-    sendResponse({ status: 'received' });
-  }
-  if (message.action === 'updateStatusHeader') {
-    updateStatusHeader(message.current, message.total);
-    sendResponse({ status: 'header updated' });
-  }
-  return true; // Keep message channel open
+  (async () => {
+    try {
+      if (message.action === 'sendConnectionRequest') {
+        const result = await handleConnectionRequest(message);
+        sendResponse({ ...result, url: message.url || location.href });
+      } else if (message.action === 'updateStatusHeader') {
+        updateStatusHeader(message.current, message.total);
+        sendResponse({ status: 'header updated' });
+      }
+    } catch (err) {
+      console.error('Listener error:', err);
+      sendResponse({ status: 'error', message: err.message });
+    }
+  })();
+  return true; // keep channel open
 });
 
 async function handleConnectionRequest({ note, index, total, name }) {
@@ -47,27 +51,43 @@ async function sendConnectionRequest(note, index) {
   let currentStatus = 'processing';
 
   try {
-    const connectBtn = await waitForConnectButton();
+    // Wait for Connect button or More menu
+    let connectBtn = await waitForConnectButton();
+    if (!connectBtn) {
+      const moreBtn = document.querySelector('button[aria-label="More actions"]');
+      if (moreBtn) {
+        moreBtn.click();
+        // Wait until dropdown is visible
+        const dropdown = await waitForElement('.artdeco-dropdown__content--is-dropdown-element', 3000);
+        if (dropdown) {
+          connectBtn = Array.from(dropdown.querySelectorAll('div[role="button"]')).find(btn => btn.innerText.trim().toLowerCase() === 'connect');
+        }
+      }
+    }
+
     if (!connectBtn) {
       console.log('Connect button not found or already connected/pending.');
-      // Check if it's already "Pending" or "Message"
       if (document.querySelector('button[aria-label*="Pending"]')) {
-        currentStatus = 'pending_already';
-        return { status: currentStatus, message: 'Invitation already sent (Pending).' };
+        return { status: 'pending_already', message: 'Invitation already sent (Pending).' };
       }
       if (document.querySelector('button[aria-label*="Message"]')) {
-        currentStatus = 'connected_already';
-        return { status: currentStatus, message: 'Already connected.' };
+        return { status: 'connected_already', message: 'Already connected.' };
       }
-      currentStatus = 'failed';
-      return { status: currentStatus, message: 'Connect button not found.' };
+      return { status: 'failed', message: 'Connect button not found.' };
     }
 
     console.log('Connect button found, clicking...');
     connectBtn.click();
-    await delay(2000); // Wait for modal to appear
+    await delay(2000); // Wait for modal
 
-    const addNoteBtn = await waitForElement('button[aria-label="Add a note"], button:has(span[title="Add a note"])', 3000); // More robust selector
+    // Check for limit reached modal first
+    const limitModal = document.querySelector('.artdeco-modal__content, [role="alert"], .artdeco-toast-item');
+    if (limitModal && /you’ve used all your monthly custom invites|cannot send/i.test(limitModal.innerText)) {
+      return { status: 'limitReached', message: 'Invitation limit reached' };
+    }
+
+    // Handle Add Note
+    const addNoteBtn = await waitForElement('button[aria-label="Add a note"], button:has(span[title="Add a note"])', 3000);
     if (addNoteBtn && note) {
       console.log('Add note button found, clicking...');
       addNoteBtn.click();
@@ -82,23 +102,23 @@ async function sendConnectionRequest(note, index) {
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         await delay(500);
       } else {
-        console.warn('Note textarea not found.');
-        // Proceed without note if textarea is missing
+        console.warn('Note textarea not found. Proceeding without note.');
       }
     } else if (note) {
       console.warn('Add note button not found, proceeding without note.');
     }
 
+    // Click Send
     console.log('Looking for Send button...');
     const sendBtn = await waitForSendButton();
     if (!sendBtn) {
-      currentStatus = 'failed';
-      return { status: currentStatus, message: 'Send button not found.' };
+      return { status: 'failed', message: 'Send button not found.' };
     }
 
     sendBtn.click();
-    await delay(3000); // Increased delay for UI to settle and show result
+    await delay(3000);
 
+    // Detect final result
     const result = await detectConnectionResult();
     currentStatus = result;
     return { status: currentStatus, message: `Connection request result: ${currentStatus}` };
@@ -121,15 +141,17 @@ function waitForPageLoad() {
   });
   }
   
-  function waitForConnectButton() {
+ // Improved waitForConnectButton to include multiple checks
+function waitForConnectButton(timeout = 5000) {
   return waitForElement(() => {
-  const buttons = document.querySelectorAll('button');
-  return Array.from(buttons).find(btn => {
-  const text = btn.innerText.trim().toLowerCase();
-  return text === 'connect' && btn.offsetParent !== null; // Make sure it's visible
-  });
-  }, 5000);
-  }
+    const buttons = document.querySelectorAll('button');
+    return Array.from(buttons).find(btn => {
+      const text = btn.innerText.trim().toLowerCase();
+      return text === 'connect' && btn.offsetParent !== null; // visible
+    });
+  }, timeout);
+}
+
   
   function waitForSendButton() {
   return waitForElement(() => {
