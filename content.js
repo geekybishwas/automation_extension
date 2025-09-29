@@ -141,13 +141,22 @@ function waitForPageLoad() {
   });
   }
   
+
+  function isVisible(el) {
+    if (!el) return false;
+    if (el.offsetParent === null) return false; // quick visibility check
+    const style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+  }
+
  // Improved waitForConnectButton to include multiple checks
 function waitForConnectButton(timeout = 5000) {
   return waitForElement(() => {
-    const buttons = document.querySelectorAll('button');
+    const buttons = document.querySelectorAll('button, div[role="button"]');
     return Array.from(buttons).find(btn => {
       const text = btn.innerText.trim().toLowerCase();
-      return text === 'connect' && btn.offsetParent !== null; // visible
+      // Only return if it's truly a Connect button
+      return text === 'connect' && isVisible(btn);
     });
   }, timeout);
 }
