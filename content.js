@@ -149,46 +149,38 @@ function waitForPageLoad() {
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
   }
 
+  
   async function clickConnectButton(timeout = 5000) {
-    // 1️⃣ Try to find main Connect button
-    let connectBtn = await waitForElement(() => {
-      const profileActions = document.querySelector('div.pv-top-card--list-actions, div.ph5') 
-                             || document.querySelector('div.display-flex.mt2');
+    return waitForElement(() => {
+      const profileActions =
+        document.querySelector('div.pv-top-card--list-actions, div.ph5') ||
+        document.querySelector('div.display-flex.mt2');
       if (!profileActions) return null;
   
-      return Array.from(profileActions.querySelectorAll('button, div[role="button"]'))
+      // Check for main Connect button
+      let btn = Array.from(profileActions.querySelectorAll('button, div[role="button"]'))
         .find(b => b.innerText.trim().toLowerCase() === 'connect' && isVisible(b));
-    }, timeout);
+      if (btn) return btn;
   
-    if (connectBtn) return connectBtn;
+      // Fallback to More button
+      const moreBtn = profileActions.querySelector('button[aria-label*="More actions"]');
+      if (moreBtn && isVisible(moreBtn)) {
+        moreBtn.click(); // open dropdown
   
-    // 2️⃣ If not found, try More dropdown without visibly clicking
-    const profileActions = document.querySelector('div.pv-top-card--list-actions, div.ph5') 
-                           || document.querySelector('div.display-flex.mt2');
-    if (!profileActions) return null;
+        const dropdown = document.querySelector(
+          '.artdeco-dropdown__content--is-dropdown-element, .artdeco-dropdown__content'
+        );
   
-    const moreBtn = profileActions.querySelector('button[aria-label*="More actions"]');
-    if (moreBtn) {
-      // Wait for dropdown to appear after clicking (or even without clicking)
-      moreBtn.click(); // optional, for LinkedIn to render it
-      await delay(300); // short delay
-  
-      const dropdown = await waitForElement(() =>
-        document.querySelector('.artdeco-dropdown__content--is-dropdown-element, .artdeco-dropdown__content')
-      , 2000);
-  
-      if (dropdown) {
-        // Directly find Connect inside dropdown and return it
         const connectInDropdown = Array.from(dropdown.querySelectorAll('button, div[role="button"]'))
           .find(b => b.innerText.trim().toLowerCase() === 'connect' && isVisible(b));
+  
         if (connectInDropdown) return connectInDropdown;
       }
-    }
   
-    return null;
+      return null;
+    }, timeout);
   }
   
-
   
   function waitForSendButton() {
   return waitForElement(() => {
