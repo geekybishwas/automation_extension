@@ -1,5 +1,4 @@
 // background.js - Handle external messages and tab management
-
 let stopRequested = false;
 let connectionResults = []; // Stores results for external app
 
@@ -13,7 +12,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.action === "connectMultiple" && Array.isArray(msg.connections) && msg.connections.length) {
     const connections = msg.connections;
     stopRequested = false;
-    connectionResults = []; // reset for new batch
+    connectionResults = []; 
 
     (async function processConnections() {
       for (let index = 0; index < connections.length; index++) {
@@ -23,7 +22,8 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        const { url, note } = connections[index];
+        const { id, url, note } = connections[index];
+
         console.log(`Processing connection ${index + 1}/${connections.length}: ${url}`);
 
         try {
@@ -42,8 +42,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           });
 
           // Send connection request and wait for response
-          const result = await sendConnectionRequest(tab.id, note, index, connections.length, 'Biswas', url);
-          connectionResults.push({ ...result, url });
+          const result = await sendConnectionRequest(tab.id, note, id, connections.length, 'Biswas', url);
+          connectionResults.push({ ...result, id, url });
+
 
           // Close the tab before moving to next
           await removeTab(tab.id);
@@ -102,24 +103,24 @@ function injectContentScript(tabId, scriptFile) {
   });
 }
 
-function sendConnectionRequest(tabId, note, index, total, name, url) {
+function sendConnectionRequest(tabId, note, id, total, name, url) {
   return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, {
       action: "sendConnectionRequest",
       note: note || "Hi, I'd like to connect with you on LinkedIn.",
-      index,
+      id,
       total,
       name,
       url
     }, response => {
       if (chrome.runtime.lastError) {
         console.error(`Message error to content.js for tab ${tabId}: ${chrome.runtime.lastError.message}`);
-        resolve({ index, status: 'error', message: chrome.runtime.lastError.message });
+        resolve({ id, status: 'error', message: chrome.runtime.lastError.message });
       } else if (response) {
         resolve(response);
       } else {
         console.warn(`No response from content script for tab ${tabId}.`);
-        resolve({ index, status: 'failed', message: 'No response from content script.' });
+        resolve({ id, status: 'failed', message: 'No response from content script.' });
       }
     });
   });

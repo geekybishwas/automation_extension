@@ -20,33 +20,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // keep channel open
 });
 
-async function handleConnectionRequest({ note, index, total, name }) {
-  console.log(`Starting connection request for ${name} (${index + 1}/${total})`);
+async function handleConnectionRequest({ note, id, total, name }) {
+  console.log(`Starting connection request for ${name} (${id + 1}/${total})`);
   let finalStatus = 'failed'; // Default to failed
   
   try {
     await waitForPageLoad();
-    createStatusPanel(total, index + 1);
+    createStatusPanel(total, id + 1);
    
     const profileName = document.querySelector("h1")?.innerText.trim() || name || "Unknown Profile";
     const headline = document.querySelector(".text-body-medium.break-words")?.innerText.trim() || "Headline not available";
 
-    addStatusItem(index, total, profileName, headline);
+    addStatusItem(id, total, profileName, headline);
     
     // Attempt to send connection request
-    const requestResult = await sendConnectionRequest(note, index);
+    const requestResult = await sendConnectionRequest(note, id);
     finalStatus = requestResult.status; // Get status from the detailed result
     
   } catch (error) {
     console.error('Connection error:', error);
     finalStatus = 'error'; // Catch any unexpected errors during the process
   } finally {
-    updateStatusItem(index, finalStatus); // Always update the status item
-    return { index, status: finalStatus }; // Return final status
+    updateStatusItem(id, finalStatus); // Always update the status item
+    return { id, status: finalStatus }; // Return final status
   }
 }
 
-async function sendConnectionRequest(note, index) {
+async function sendConnectionRequest(note, id) {
   console.log('Looking for Connect button...');
   let currentStatus = 'processing';
 
@@ -213,8 +213,8 @@ async function detectConnectionResult() {
 
 // ... (other functions like waitForElement, delay, createStatusPanel, addStatusItem, updateStatusHeader remain similar)
 
-function updateStatusItem(index, status, message = '') { // Added message parameter
-  const el = document.getElementById(`linkedin-status-${index}`);
+function updateStatusItem(id, status, message = '') { // Added message parameter
+  const el = document.getElementById(`linkedin-status-${id}`);
   if (!el) return;
 
   let icon = '';
@@ -291,7 +291,7 @@ setTimeout(() => {
 });
 }
 
-function createStatusPanel(total,index) {
+function createStatusPanel(total,id) {
   let panel = document.getElementById("linkedin-status-panel");
   if (!panel) {
     panel = document.createElement("div");
@@ -382,12 +382,12 @@ document.getElementById("stop-btn")?.addEventListener("click", () => {
 
 }
 
-function addStatusItem(index, total, name, headline) {
+function addStatusItem(id, total, name, headline) {
   const list = document.getElementById("linkedin-status-list");
   if (!list) return;
 
   const item = document.createElement("div");
-  item.id = `linkedin-status-item-${index}`;
+  item.id = `linkedin-status-item-${id}`;
   item.style.display = "flex";
   item.style.justifyContent = "space-between";
   item.style.alignItems = "center";
@@ -399,7 +399,7 @@ function addStatusItem(index, total, name, headline) {
       <div style="font-weight:500">${name || "Unknown"}</div>
       <div style="font-size:12px;color:#666">${headline || ""}</div>
     </div>
-    <span id="linkedin-status-${index}" style="display:flex;align-items:center;justify-content:center;">
+    <span id="linkedin-status-${id}" style="display:flex;align-items:center;justify-content:center;">
     <div class="linkedin-spinner"></div>
    </span>
   `;
@@ -414,8 +414,8 @@ function updateStatusHeader(current, total) {
   }
 }
 
-function updateStatusItem(index, status) {
-  const el = document.getElementById(`linkedin-status-${index}`);
+function updateStatusItem(id, status) {
+  const el = document.getElementById(`linkedin-status-${id}`);
   if (!el) return;
 
   if (status === "success") el.textContent = "✅";
