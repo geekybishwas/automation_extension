@@ -51,61 +51,49 @@ async function sendConnectionRequest(note, id) {
   let currentStatus = 'processing';
 
   try {
+
+    if (document.querySelector('button[aria-label*="Pending"]')) {
+      return { status: 'pending_already', message: 'Invitation already sent (Pending).' };
+    }
     // Wait for Connect button or More menu
     let connectBtn = await clickConnectButton();
-    // if (!connectBtn) {
-    //   const moreBtn = document.querySelector('button[aria-label="More actions"]');
-    //   if (moreBtn) {
-    //     moreBtn.click();
-    //     // Wait until dropdown is visible
-    //     const dropdown = await waitForElement('.artdeco-dropdown__content--is-dropdown-element', 3000);
-    //     if (dropdown) {
-    //       connectBtn = Array.from(dropdown.querySelectorAll('div[role="button"]')).find(btn => btn.innerText.trim().toLowerCase() === 'connect');
-    //     }
-    //   }
-    // }
-
-    if (!connectBtn) {
-      console.log('Connect button not found or already connected/pending.');
-      if (document.querySelector('button[aria-label*="Pending"]')) {
-        return { status: 'pending_already', message: 'Invitation already sent (Pending).' };
-      }
-      if (document.querySelector('button[aria-label*="Message"]')) {
-        return { status: 'connected_already', message: 'Already connected.' };
-      }
-      return { status: 'failed', message: 'Connect button not found.' };
-    }
 
     console.log('Connect button found, clicking...');
     connectBtn.click();
     await delay(2000); // Wait for modal
 
-    // Check for limit reached modal first
-    const limitModal = document.querySelector('.artdeco-modal__content, [role="alert"], .artdeco-toast-item');
-    if (limitModal && /you’ve used all your monthly custom invites|cannot send/i.test(limitModal.innerText)) {
-      return { status: 'limitReached', message: 'Invitation limit reached' };
-    }
 
-    // Handle Add Note
-    const addNoteBtn = await waitForElement('button[aria-label="Add a note"], button:has(span[title="Add a note"])', 3000);
+    // Handle Add Note if available
+    const addNoteBtn = await waitForElement(
+      'button[aria-label="Add a note"], button:has(span[title="Add a note"])',
+      3000
+    );
     if (addNoteBtn && note) {
       console.log('Add note button found, clicking...');
       addNoteBtn.click();
-      await delay(1000);
+      await delay(1500);
+
+      // 🔴 Detect "limit reached" upsell modal
+    const upsellModal = document.querySelector('.artdeco-modal.modal-upsell');
+    console.log('Checking for upsell modal...' , upsellModal);
+    if (upsellModal) {
+      const headline = upsellModal.querySelector('h2.modal-upsell__headline')?.innerText || '';
+      const subtitle = upsellModal.querySelector('p.modal-upsell__subtitle')?.innerText || '';
+
+      if (/unlimited personalized invites/i.test(headline) || /you’ve used all your monthly custom invites/i.test(subtitle)) {
+        console.log('Detected invitation limit reached modal.');
+        return { status: 'limitReached', message: 'Invitation limit reached (Premium upsell).' };
+      }
+    }
 
       const textarea = await waitForElement('textarea[name="message"]', 2000);
       if (textarea) {
-        console.log('Textarea found, filling message...');
         textarea.focus();
         textarea.value = note;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         await delay(500);
-      } else {
-        console.warn('Note textarea not found. Proceeding without note.');
       }
-    } else if (note) {
-      console.warn('Add note button not found, proceeding without note.');
     }
 
     // Click Send
