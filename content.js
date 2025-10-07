@@ -52,18 +52,18 @@ async function sendConnectionRequest(note, id) {
 
   try {
     // Wait for Connect button or More menu
-    let connectBtn = await waitForConnectButton();
-    if (!connectBtn) {
-      const moreBtn = document.querySelector('button[aria-label="More actions"]');
-      if (moreBtn) {
-        moreBtn.click();
-        // Wait until dropdown is visible
-        const dropdown = await waitForElement('.artdeco-dropdown__content--is-dropdown-element', 3000);
-        if (dropdown) {
-          connectBtn = Array.from(dropdown.querySelectorAll('div[role="button"]')).find(btn => btn.innerText.trim().toLowerCase() === 'connect');
-        }
-      }
-    }
+    let connectBtn = await clickConnectButton();
+    // if (!connectBtn) {
+    //   const moreBtn = document.querySelector('button[aria-label="More actions"]');
+    //   if (moreBtn) {
+    //     moreBtn.click();
+    //     // Wait until dropdown is visible
+    //     const dropdown = await waitForElement('.artdeco-dropdown__content--is-dropdown-element', 3000);
+    //     if (dropdown) {
+    //       connectBtn = Array.from(dropdown.querySelectorAll('div[role="button"]')).find(btn => btn.innerText.trim().toLowerCase() === 'connect');
+    //     }
+    //   }
+    // }
 
     if (!connectBtn) {
       console.log('Connect button not found or already connected/pending.');
@@ -149,17 +149,45 @@ function waitForPageLoad() {
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
   }
 
- // Improved waitForConnectButton to include multiple checks
-function waitForConnectButton(timeout = 5000) {
-  return waitForElement(() => {
-    const buttons = document.querySelectorAll('button, div[role="button"]');
-    return Array.from(buttons).find(btn => {
-      const text = btn.innerText.trim().toLowerCase();
-      // Only return if it's truly a Connect button
-      return text === 'connect' && isVisible(btn);
-    });
-  }, timeout);
-}
+  async function clickConnectButton(timeout = 5000) {
+    // 1️⃣ Try to find main Connect button
+    let connectBtn = await waitForElement(() => {
+      const profileActions = document.querySelector('div.pv-top-card--list-actions, div.ph5') 
+                             || document.querySelector('div.display-flex.mt2');
+      if (!profileActions) return null;
+  
+      return Array.from(profileActions.querySelectorAll('button, div[role="button"]'))
+        .find(b => b.innerText.trim().toLowerCase() === 'connect' && isVisible(b));
+    }, timeout);
+  
+    if (connectBtn) return connectBtn;
+  
+    // 2️⃣ If not found, try More dropdown without visibly clicking
+    const profileActions = document.querySelector('div.pv-top-card--list-actions, div.ph5') 
+                           || document.querySelector('div.display-flex.mt2');
+    if (!profileActions) return null;
+  
+    const moreBtn = profileActions.querySelector('button[aria-label*="More actions"]');
+    if (moreBtn) {
+      // Wait for dropdown to appear after clicking (or even without clicking)
+      moreBtn.click(); // optional, for LinkedIn to render it
+      await delay(300); // short delay
+  
+      const dropdown = await waitForElement(() =>
+        document.querySelector('.artdeco-dropdown__content--is-dropdown-element, .artdeco-dropdown__content')
+      , 2000);
+  
+      if (dropdown) {
+        // Directly find Connect inside dropdown and return it
+        const connectInDropdown = Array.from(dropdown.querySelectorAll('button, div[role="button"]'))
+          .find(b => b.innerText.trim().toLowerCase() === 'connect' && isVisible(b));
+        if (connectInDropdown) return connectInDropdown;
+      }
+    }
+  
+    return null;
+  }
+  
 
   
   function waitForSendButton() {
