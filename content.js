@@ -22,7 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleConnectionRequest({ note, id, total, name }) {
   console.log(`Starting connection request for ${name} (${id + 1}/${total})`);
-  let finalStatus = 'failed'; // Default to failed
+  let finalStatus = 'FAILED'; // Default to FAILED
   
   try {
     await waitForPageLoad();
@@ -53,11 +53,14 @@ async function sendConnectionRequest(note, id) {
   try {
 
     if (document.querySelector('button[aria-label*="Pending"]')) {
-      return { status: 'pending_already', message: 'Invitation already sent (Pending).' };
+      return { status: 'PENDING', message: 'Invitation already sent (Pending).' };
     }
     // Wait for Connect button or More menu
     let connectBtn = await clickConnectButton();
-
+    if (!connectBtn) {
+      console.warn('No Connect button found on this profile.');
+      return { status: 'FAILED', message: 'No Connect button available' };
+    }
     console.log('Connect button found, clicking...');
     connectBtn.click();
     await delay(2000); // Wait for modal
@@ -82,7 +85,7 @@ async function sendConnectionRequest(note, id) {
 
       if (/unlimited personalized invites/i.test(headline) || /you’ve used all your monthly custom invites/i.test(subtitle)) {
         console.log('Detected invitation limit reached modal.');
-        return { status: 'limitReached', message: 'Invitation limit reached (Premium upsell).' };
+        return { status: 'LIMIT_REACHED', message: 'Invitation limit reached (Premium upsell).' };
       }
     }
 
@@ -100,7 +103,7 @@ async function sendConnectionRequest(note, id) {
     console.log('Looking for Send button...');
     const sendBtn = await waitForSendButton();
     if (!sendBtn) {
-      return { status: 'failed', message: 'Send button not found.' };
+      return { status: 'FAILED', message: 'Send button not found.' };
     }
 
     sendBtn.click();
@@ -181,15 +184,15 @@ function waitForPageLoad() {
   }
 
 async function detectConnectionResult() {
-  // Check for success: "Invitation sent" toast or "Pending" button
+  // Check for SUCCESS: "Invitation sent" toast or "Pending" button
   const successToast = document.querySelector('[role="alert"] .artdeco-toast-item__content, .artdeco-toast-item span[title*="Invitation sent"]');
   if (successToast && successToast.innerText.toLowerCase().includes('invitation sent')) {
-    return 'success';
+    return 'SUCCESS';
   }
 
   // Check for a "Pending" button on the profile after interaction
   if (await waitForElement('button[aria-label*="Pending"]', 1000)) {
-    return 'success'; // Treat 'Pending' as a successful send
+    return 'SUCCESS'; // Treat 'Pending' as a successful send
   }
 
   // Check for LinkedIn limit modal or toast
@@ -197,10 +200,10 @@ async function detectConnectionResult() {
   if (modalOrToast) {
     const text = modalOrToast.innerText.toLowerCase();
     if (text.includes('you’ve used all your monthly custom invites') || text.includes('cannot send any more invitations')) {
-      return 'limitReached';
+      return 'LIMIT_REACHED';
     }
-    if (text.includes('something went wrong') || text.includes('failed to send')) {
-      return 'failed';
+    if (text.includes('something went wrong') || text.includes('FAILED to send')) {
+      return 'FAILED';
     }
   }
   
@@ -209,14 +212,14 @@ async function detectConnectionResult() {
   if (errorInModal) {
     const text = errorInModal.innerText.toLowerCase();
     if (text.includes('limit reached') || text.includes('cannot send')) {
-      return 'limitReached';
+      return 'LIMIT_REACHED';
     }
-    return 'failed';
+    return 'FAILED';
   }
 
-  // If we reach here, and no explicit success/failure/limit was detected,
+  // If we reach here, and no explicit SUCCESS/failure/limit was detected,
   // it's an unknown state. Consider it a failure for safety.
-  return 'failed'; 
+  return 'FAILED'; 
 }
 
 // ... (other functions like waitForElement, delay, createStatusPanel, addStatusItem, updateStatusHeader remain similar)
@@ -230,27 +233,27 @@ function updateStatusItem(id, status, message = '') { // Added message parameter
   let tooltip = status;
 
   switch (status) {
-    case 'success':
+    case 'SUCCESS':
       icon = '✅';
       color = '#28a745'; // Green
       tooltip = 'Invitation Sent';
       break;
-    case 'limitReached':
+    case 'LIMIT_REACHED':
       icon = '🚫';
       color = '#ffc107'; // Yellow/Orange
       tooltip = 'LinkedIn Invitation Limit Reached';
       break;
-    case 'failed':
+    case 'FAILED':
       icon = '❌';
       color = '#dc3545'; // Red
-      tooltip = message || 'Failed to send invitation';
+      tooltip = message || 'FAILED to send invitation';
       break;
     case 'error': // For unexpected script errors
       icon = '🚨';
       color = '#dc3545';
       tooltip = message || 'An unexpected error occurred';
       break;
-    case 'pending_already':
+    case 'PENDING':
       icon = '🕒';
       color = '#007bff'; // Blue
       tooltip = 'Invitation already pending';
@@ -426,9 +429,9 @@ function updateStatusItem(id, status) {
   const el = document.getElementById(`linkedin-status-${id}`);
   if (!el) return;
 
-  if (status === "success") el.textContent = "✅";
-  else if (status === "limitReached") el.textContent = "⛔"; // Limit reached
-  else if (status === "failed") el.textContent = "⚠️";
+  if (status === "SUCCESS") el.textContent = "✅";
+  else if (status === "LIMIT_REACHED") el.textContent = "⛔"; // Limit reached
+  else if (status === "FAILED") el.textContent = "⚠️";
   else el.innerHTML = `<div class="linkedin-spinner"></div>`;
 }
 
