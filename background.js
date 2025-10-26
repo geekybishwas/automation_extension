@@ -61,7 +61,123 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 
     return true; // Keep channel open for async response
   }
+
+  if (msg.action === "sendMultipleMessages" && Array.isArray(msg.targets) && msg.targets.length) {
+    const targets = msg.targets;
+    stopRequested = false;
+    connectionResults = [];
+
+    (async function processMessages() {
+      for (let index = 0; index < targets.length; index++) {
+        if (stopRequested) {
+          sendResponse({ status: "stopped", results: connectionResults });
+          return;
+        }
+
+        const { id, url, message } = targets[index];
+        console.log(`📨 [${index + 1}/${targets.length}] Sending message to: ${url}`);
+
+        try {
+          const tab = await createTab(url);
+          await delay(3000);
+          await injectContentScript(tab.id, "content.js");
+
+          // Update header (like connection flow)
+          chrome.tabs.sendMessage(tab.id, {
+            action: "updateStatusHeader",
+            current: index + 1,
+            total: targets.length,
+          });
+
+          // Core message sending
+          const result = await sendMessageToProfile(tab.id, message, id, targets.length, 'Bishwas', url);
+          connectionResults.push({ ...result, id, url });
+
+          await removeTab(tab.id);
+        } catch (error) {
+          console.error(`❌ Error on ${url}:`, error);
+          connectionResults.push({ id, url, status: "error", message: error.message });
+        }
+      }
+
+      console.log("✅ All messages processed.");
+      sendResponse({ status: "done", results: connectionResults });
+    })();
+
+    return true;
+  }
+
+  if (msg.action === "viewProfiles" && Array.isArray(msg.urls) && msg.urls.length) {
+    const profiles = msg.urls;
+    stopRequested = false;
+    connectionResults = [];
+  
+    (async function processProfileViews() {
+      for (let index = 0; index < profiles.length; index++) {
+        if (stopRequested) {
+          sendResponse({ status: "stopped", results: connectionResults });
+          return;
+        }
+  
+        const profile = profiles[index];
+        const url = profile.url;
+  
+        try {
+          const tab = await createTab(url);
+  
+          // Wait for the page to fully load
+          await waitForTabLoad(tab.id);
+  
+          // Then wait human-like time before closing
+          await delay(4000 + Math.random() * 2000); 
+  
+          connectionResults.push({ id: profile.id, url, status: "SUCCESS" });
+  
+          await removeTab(tab.id);
+        } catch (error) {
+          console.error(`Error viewing ${url}:`, error);
+          connectionResults.push({
+            id: profile.id,
+            url,
+            status: "error",
+            message: error.message,
+          });
+        }
+      }
+  
+      sendResponse({ status: "done", results: connectionResults });
+    })();
+  
+    return true;
+  }
+  
+  
+  
 });
+
+function sendMessageToProfile(tabId, message, id, total, name, url) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, {
+      action: "sendLinkedInMessage",
+      message,
+      id,
+      total,
+      name,
+      url
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.error(`Message error to content.js for tab ${tabId}: ${chrome.runtime.lastError.message}`);
+        resolve({ id, status: 'error', message: chrome.runtime.lastError.message });
+      } else if (response) {
+        resolve(response);
+      } else {
+        console.warn(`No response from content script for tab ${tabId}.`);
+        resolve({ id, status: 'failed', message: 'No response from content script.' });
+      }
+    });
+  });
+}
+
 
 // Stop signal listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -123,5 +239,17 @@ function sendConnectionRequest(tabId, note, id, total, name, url) {
         resolve({ id, status: 'failed', message: 'No response from content script.' });
       }
     });
+  });
+}
+
+async function waitForTabLoad(tabId) {
+  return new Promise((resolve) => {
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
   });
 }

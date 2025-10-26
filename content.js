@@ -8,7 +8,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'sendConnectionRequest') {
         const result = await handleConnectionRequest(message);
         sendResponse({ ...result, url: message.url || location.href });
-      } else if (message.action === 'updateStatusHeader') {
+      } 
+      else if (message.action === 'sendLinkedInMessage') {
+        const { message: messageText, id, url } = message;
+        const result = await sendLinkedInMessage(messageText);
+        sendResponse({ ...result, id, url });
+      } 
+      else if (message.action === 'updateStatusHeader') {
         updateStatusHeader(message.current, message.total);
         sendResponse({ status: 'header updated' });
       }
@@ -19,6 +25,143 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
   return true; // keep channel open
 });
+
+async function sendLinkedInMessage(messageText) {
+  try {
+    console.log("🔍 Starting message sending process...");
+
+    // Close any pre-existing message panels before starting a new one.
+    // This handles cases where a previous automation might have left a panel open.
+    closeAnyOpenMessagePanels();
+    await delay(800);
+
+    console.log("🔍 Now looking for the 'Message' button to open a new modal...");
+
+    // Check for 'Pending' invitation status on the profile.
+    if (document.querySelector('button[aria-label*="Pending"]')) {
+      console.log("ℹ️ Invitation already sent (Pending). Skipping message.");
+      return { status: 'PENDING', message: 'Invitation already sent (Pending).' };
+    }
+
+    // Find the 'Message' button on the profile page.
+    const messageButton = await waitForElement(() => {
+      const btns = Array.from(document.querySelectorAll('button, a[role="button"]'));
+      return btns.find(b =>
+        isVisible(b) &&
+        b.innerText.trim().toLowerCase() === 'message'
+      );
+    }, 6000);
+
+    if (!messageButton) {
+      console.warn("⚠️ No 'Message' button found. Profile is likely not connected or not messageable.");
+      return { status: "skipped", message: "Not messageable" };
+    }
+
+    console.log("💬 Clicking the 'Message' button to open the chat modal...");
+    messageButton.click();
+    await delay(1500); // Give time for the modal to fully appear
+
+    console.log("⌛ Waiting for the message input field to become available...");
+
+    const inputEl = await waitForElement(() =>
+      document.querySelector('div.msg-form__contenteditable[role="textbox"]')
+    , 8000);
+
+    if (!inputEl) {
+      throw new Error("Message box (contenteditable input field) not found!");
+    }
+
+    console.log("✍️ Inserting message using simulated typing...");
+    insertTextProperly(inputEl, messageText);
+    await delay(1500); // Give LinkedIn time to register the input and enable the Send button
+
+    // Find the 'Send' button within the active message modal.
+    const sendBtn = await waitForElement(() =>
+      Array.from(document.querySelectorAll('button[type="submit"], button.msg-form__send-button, button[aria-label*="Send"]')).find(btn =>
+        isVisible(btn) &&
+        btn.innerText.trim().toLowerCase() === 'send' &&
+        !btn.disabled // Ensure the send button is enabled
+      )
+    , 7000); // Increased timeout for robustness
+
+    if (!sendBtn) {
+      // Check if a disabled send button exists to give a more specific error
+      const disabledSendBtn = document.querySelector('button[type="submit"][disabled], button.msg-form__send-button[disabled], button[aria-label*="Send"][disabled]');
+      if (disabledSendBtn) {
+          throw new Error("Send button found, but it is disabled. Input might not have fully registered.");
+      }
+      throw new Error("Send button not found after message input.");
+    }
+
+    console.log("📨 Clicking 'Send' button...");
+    sendBtn.click();
+    await delay(2500); // Wait for message to send and potential success toast to appear
+
+    // Check for success toast or immediate status change
+    const successToast = document.querySelector('.artdeco-toast-item__content span[title*="Message sent"], [role="alert"] span[title*="Message sent"]');
+    if (successToast) {
+        console.log("✅ Message sent successfully (toast detected!).");
+        return { status: "success", message: "Message sent successfully" };
+    } else {
+        console.warn("❗ Message sent, but confirmation toast not found. Assuming success.");
+        return { status: "success", message: "Message sent (confirmation toast not found)" };
+    }
+
+  } catch (e) {
+    console.error("❌ Error sending message:", e.message);
+    return { status: "error", message: e.message };
+  } finally {
+    // ALWAYS attempt to close the message panel after the process, regardless of success or failure.
+    console.log("🧹 Attempting to close the message panel after sending/error...");
+    closeAnyOpenMessagePanels();
+    await delay(500); // Small delay to let close animation start
+  }
+}
+
+// Renamed and refined close function
+function closeAnyOpenMessagePanels() {
+  console.log("Attempting to close message panels...");
+
+  // Priority 1: Main message modal (often has an 'x' or 'Dismiss' button)
+  let closedModal = false;
+  const modalCloseBtn = document.querySelector('button[aria-label*="Dismiss"], button[aria-label*="Close chat"], button[aria-label="Close"]');
+  if (modalCloseBtn && isVisible(modalCloseBtn)) {
+    modalCloseBtn.click();
+    console.log("🛑 Closed main message modal.");
+    closedModal = true;
+  }
+
+  // Priority 2: Message overlay bubble (the smaller, fixed-position chat window)
+  // This one usually has a minimize button, but sometimes an 'x' as well.
+  const overlayCloseBtn = document.querySelector('button.msg-overlay-bubble-header__control[aria-label*="Minimize message window"], button.msg-overlay-bubble-header__control[aria-label*="Close message window"]');
+  if (!closedModal && overlayCloseBtn && isVisible(overlayCloseBtn)) {
+    overlayCloseBtn.click();
+    console.log("🛑 Minimized/Closed message overlay bubble.");
+  }
+   // Add a small delay for UI to react to the close click
+   // A quick check if a modal element is still in the DOM might be useful if closing is flaky.
+   // E.g., const modalStillPresent = document.querySelector('.msg-convo-form');
+   // If modalStillPresent, try clicking again or logging a warning.
+}
+
+
+function insertTextProperly(element, text) {
+  element.focus();
+
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+
+  for (let char of text) {
+    document.execCommand("insertText", false, char);
+  }
+
+  element.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
 
 async function handleConnectionRequest({ note, id, total, name }) {
   console.log(`Starting connection request for ${name} (${id + 1}/${total})`);
@@ -76,7 +219,7 @@ async function sendConnectionRequest(note, id) {
       addNoteBtn.click();
       await delay(1500);
 
-      // 🔴 Detect "limit reached" upsell modal
+      // Detect "limit reached" upsell modal
     const upsellModal = document.querySelector('.artdeco-modal.modal-upsell');
     console.log('Checking for upsell modal...' , upsellModal);
     if (upsellModal) {
@@ -135,14 +278,14 @@ function waitForPageLoad() {
 
   function isVisible(el) {
     if (!el) return false;
-    if (el.offsetParent === null) return false; // quick visibility check
+    if (el.offsetParent === null) return false;
     const style = window.getComputedStyle(el);
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-  }
+}
 
   
-  async function clickConnectButton(timeout = 5000) {
-    return waitForElement(() => {
+async function clickConnectButton(timeout = 5000) {
+  return waitForElement(() => {
       const profileActions =
         document.querySelector('div.pv-top-card--list-actions, div.ph5') ||
         document.querySelector('div.display-flex.mt2');
@@ -169,11 +312,11 @@ function waitForPageLoad() {
       }
   
       return null;
-    }, timeout);
-  }
+  }, timeout);
+}
   
   
-  function waitForSendButton() {
+function waitForSendButton() {
   return waitForElement(() => {
   const buttons = document.querySelectorAll('button');
   return Array.from(buttons).find(btn => {
@@ -181,7 +324,7 @@ function waitForPageLoad() {
   return (text === 'send' || text === 'send invitation') && btn.offsetParent !== null;
   });
   }, 5000);
-  }
+}
 
 async function detectConnectionResult() {
   // Check for SUCCESS: "Invitation sent" toast or "Pending" button
