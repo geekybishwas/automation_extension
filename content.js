@@ -146,10 +146,41 @@ async function sendLinkedInMessage(messageText) {
     await closeAnyOpenMessagePanels();
     await delay(800);
 
-    if (document.querySelector('button[aria-label*="Pending"]')) {
+
+    const pendingBtn = document.querySelector('button[aria-label*="Pending"]');
+    // Determine status
+    if (pendingBtn) {
       finalStatus = 'PENDING';
       throw new Error("Invitation pending. Message skipped.");
+    } 
+    const profileActionsContainer = document.querySelector('div.pv-top-card--list-actions') || document.querySelector('div.ph5');
+    const directConnectBtn = profileActionsContainer ? Array.from(profileActionsContainer.querySelectorAll('button, div[role="button"]')).find(b => isVisible(b) && b.innerText.trim().toLowerCase() === 'connect') : null;
+
+    let moreConnectBtn = null;
+    const moreBtn = profileActionsContainer?.querySelector('button[aria-label*="More"]');
+    if (moreBtn && isVisible(moreBtn)) {
+      console.log('Clicking "More" button to check dropdown...');
+      moreBtn.click();
+      await delay(300); 
+      const dropdown = await waitUntilVisible(
+        'div.artdeco-dropdown__content[aria-hidden="false"], div.artdeco-dropdown__content[role="menu"]',
+        8000
+      );
+
+      await delay(2000);
+
+      if (dropdown) {
+        moreConnectBtn = Array.from(dropdown.querySelectorAll('div[role="button"], button'))
+          .find(b => isVisible(b) && b.innerText.trim().toLowerCase() === 'connect');
+        moreBtn.click(); // close dropdown
+      }
     }
+
+    if (directConnectBtn || moreConnectBtn) {
+      finalStatus = 'NOT_CONNECTED';
+      throw new Error("Not connected yet. Message skipped.");
+    }
+    
 
     const messageButton = await waitForElement(() =>
       Array.from(document.querySelectorAll('button, a[role="button"]'))
