@@ -23,7 +23,7 @@ console.log('LinkedIn Connector content script loaded');
           sendResponse({ status: 'header updated' });
         }
       } catch (err) {
-        console.error('Listener error:', err);
+        console.error('Error handling message:', err);
         sendResponse({ status: 'error', message: err.message });
       }
     })();
@@ -75,20 +75,19 @@ console.log('LinkedIn Connector content script loaded');
       if (moreBtn && isVisible(moreBtn)) {
         console.log('Clicking "More" button to check dropdown...');
         moreBtn.click();
-        await delay(300); 
+        await delay(1000); 
         const dropdown = await waitUntilVisible(
           'div.artdeco-dropdown__content[aria-hidden="false"], div.artdeco-dropdown__content[role="menu"]',
           8000
         );
 
-        console.log('Dropdown after More click:', dropdown);
-
-        await delay(5000);
+        await delay(2000);
       
         if (dropdown) {
           const connectInDropdown = Array.from(dropdown.querySelectorAll('div[role="button"], button'))
-            .find(b => isVisible(b) && b.innerText.trim().toLowerCase().includes('connect'));
-          
+            .find(b => isVisible(b) && b.innerText.trim().toLowerCase() === 'connect');
+
+          await delay(3000);
 
           if (connectInDropdown) {
             updateStatusItem('NOT_CONNECTED');
@@ -112,7 +111,6 @@ console.log('LinkedIn Connector content script loaded');
       return { status: 'CONNECTED', message: 'No "Connect" or "Pending" indicators found, assuming already connected.' };
   
     } catch (err) {
-      console.error('❌ checkConnectionStatus error:', err);
       updateStatusItem('error', `DOM interaction failed: ${err.message || 'Unknown error'}`);
       await delay(1000);
       return { status: 'ERROR', message: `DOM interaction failed: ${err.message || 'Unknown error'}` };
@@ -170,8 +168,10 @@ async function sendLinkedInMessage(messageText) {
       await delay(2000);
 
       if (dropdown) {
+
         moreConnectBtn = Array.from(dropdown.querySelectorAll('div[role="button"], button'))
           .find(b => isVisible(b) && b.innerText.trim().toLowerCase() === 'connect');
+        
         moreBtn.click(); // close dropdown
       }
     }
@@ -221,7 +221,6 @@ async function sendLinkedInMessage(messageText) {
     finalStatus = "SUCCESS";
 
   } catch (err) {
-    console.error("❌ Error sending message:", err.message);
     await closeAnyOpenMessagePanels();
   }
 
@@ -293,7 +292,6 @@ async function handleConnectionRequest({ note, id, total, name }) {
     finalStatus = requestResult.status; // Get status from the detailed result
     
   } catch (error) {
-    console.error('Connection error:', error);
     finalStatus = 'error'; // Catch any unexpected errors during the process
   } finally {
     updateStatusItem(id, finalStatus); // Always update the status item
@@ -385,7 +383,6 @@ async function sendConnectionRequest(note, id) {
 
 
   } catch (error) {
-    console.error('Error during sendConnectionRequest:', error);
     return { status: 'error', message: error.message };
   }
 }
