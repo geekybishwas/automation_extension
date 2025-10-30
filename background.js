@@ -150,9 +150,75 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   
     return true;
   }
+  if (msg.action === "checkConnectionStatus" && Array.isArray(msg.connections) && msg.connections.length) {
+    const profilesToCheck = msg.connections;
+    stopRequested = false;
+    connectionResults = [];
   
+    (async function processStatusChecks() {
+      for (let i = 0; i < profilesToCheck.length; i++) {
+        if (stopRequested) {
+          sendResponse({ status: "stopped", results: connectionResults });
+          return;
+        }
   
+        const { id, url } = profilesToCheck[i];
+        console.log(`🔎 [${i + 1}/${profilesToCheck.length}] Checking connection for ID: ${id}, URL: ${url}`);
   
+        let tabId = null;
+  
+        try {
+          // 1️⃣ Create new tab
+          const tab = await createTab(url);
+          tabId = tab.id;
+          await waitForTabLoad(tabId);
+  
+          // 2️⃣ Inject content script dynamically
+          await injectContentScript(tabId, "content.js");
+  
+          // 3️⃣ Send message to content.js
+          const contentResponse = await new Promise((resolve) => {
+            chrome.tabs.sendMessage(tabId, { action: "checkConnectionStatus" }, (response) => {
+              if (chrome.runtime.lastError) {
+                console.error(`❌ Error on tab ${tabId}:`, chrome.runtime.lastError.message);
+                resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
+              } else {
+                // Ensure a response object is always returned
+                resolve(response || { status: "ERROR", message: "No response from content script." });
+              }
+            });
+          });
+  
+          // 4️⃣ Store results
+          connectionResults.push({
+            id,
+            url,
+            status: contentResponse.status,
+            message: contentResponse.message || "",
+          });
+  
+        } catch (error) {
+          console.error(`❌ Failed to check connection for ID: ${id}, URL: ${url}:`, error);
+          connectionResults.push({
+            id,
+            url,
+            status: "ERROR",
+            message: error.message || "Unknown error",
+          });
+        } finally {
+          // 5️⃣ Close tab
+          if (tabId) {
+            await removeTab(tabId).catch(() => {});
+          }
+        }
+      }
+  
+      console.log("✅ All profiles checked. Results:", connectionResults);
+      sendResponse({ status: "done", results: connectionResults });
+    })();
+  
+    return true; // Keep channel open for async response
+  }
 });
 
 function sendMessageToProfile(tabId, message, id, total, name, url) {
