@@ -18,6 +18,15 @@ console.log('LinkedIn Connector content script loaded');
           const statusResult = await checkConnectionStatus(); // no redefinition
           sendResponse({ ...statusResult, url: message.url || location.href });
         }
+        else if(message.action === 'like_post'){
+          const result = await likePost();
+          sendResponse({ ...result, url: message.url || location.href });
+        }
+        else if (message.action === 'comment_on_post') {
+          const { comment, id = 0, total = 1, name = "Unknown", url } = message;
+          const result = await handleLinkedInComment(comment || "Nice post!", id, total, name);
+          sendResponse({ ...result, id, url });
+        }
         else if (message.action === 'updateStatusHeader') {
           updateStatusHeader(message.current, message.total);
           sendResponse({ status: 'header updated' });
@@ -29,6 +38,30 @@ console.log('LinkedIn Connector content script loaded');
     })();
     return true; // keep channel open
   });
+
+  async function likePost() {
+    try {
+      await waitForPageLoad();
+      createStatusPanel(); // Ensure panel is ready
+
+      const likeButton = await waitForElement(() =>
+        Array.from(document.querySelectorAll('button, div[role="button"]'))
+          .find(b => isVisible(b) && b.getAttribute('aria-pressed') === 'false' && (b.innerText.trim().toLowerCase() === 'like' || b.getAttribute('aria-label')?.toLowerCase().includes('like')))
+      , 6000);
+
+      if (!likeButton) {
+        return { status: 'ALREADY_LIKED', message: 'Post already liked or Like button not found.' };
+      }
+
+      likeButton.click();
+      await delay(1500); // Wait for action to complete
+
+      return { status: 'SUCCESS', message: 'Post liked successfully.' };
+
+    } catch (err) {
+      return { status: 'ERROR', message: `Failed to like post: ${err.message || 'Unknown error'}` };
+    }
+  }
 
   async function checkConnectionStatus() {
     try {
@@ -121,6 +154,110 @@ console.log('LinkedIn Connector content script loaded');
         const panel = document.getElementById("linkedin-status-panel");
         if (panel) panel.remove();
       }, 5000);
+    }
+  }
+  
+  async function handleLinkedInComment(commentText) {
+    let finalStatus = "FAILED";
+    try {
+      // 0️⃣ Prepare UI + wait
+      await waitForPageLoad();
+      createStatusPanel();
+      const profileName =
+      document.querySelector('.update-components-actor__title span[aria-hidden="true"]')?.innerText.trim() ||
+      document.querySelector('.feed-shared-actor__name')?.innerText.trim() ||
+      document.querySelector('h1')?.innerText.trim() ||
+      "LinkedIn Post";
+
+      addStatusItem(0, 1, profileName, "Commenting on post");
+  
+      // 1️⃣ Ensure the Comment trigger button is visible and click it
+      // selector: the feed comment trigger uses aria-label="Comment" and class includes "comment-button"
+      const commentTrigger = await waitForElement(() =>
+        Array.from(document.querySelectorAll('button[aria-label*="Comment"], button.comment-button, button[data-finite-scroll-hotkey="c"]'))
+          .find(b => isVisible(b) && (b.getAttribute('aria-label')?.toLowerCase().includes('comment') || b.innerText.trim().toLowerCase() === 'comment'))
+      , 8000);
+  
+      if (!commentTrigger) {
+        finalStatus = "ERROR";
+        throw new Error("Comment trigger/button not found");
+      }
+  
+      // Scroll into view and click (reduces invisible click issues)
+      try { commentTrigger.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) {}
+      commentTrigger.click();
+      await delay(600); // short wait for editor to appear
+  
+      // 2️⃣ Wait for the Quill editor (the editable area)
+      const editor = await waitForElement(() =>
+        Array.from(document.querySelectorAll('.ql-editor[contenteditable="true"], .editor-content .ql-editor'))
+          .find(e => isVisible(e))
+      , 8000);
+  
+      if (!editor) {
+        finalStatus = "ERROR";
+        throw new Error("Comment editor not found");
+      }
+  
+      editor.focus();
+  
+      try {
+        editor.innerHTML = `<p>${escapeHtml(commentText)}</p>`;
+        editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      } catch (e) {
+        await insertTextProperly(editor, commentText, 40);
+      }
+  
+      await delay(900 + Math.random() * 600);
+  
+      const postButton = await waitForElement(() =>
+        Array.from(document.querySelectorAll('button.comments-comment-box__submit-button--cr, button.artdeco-button--primary'))
+          .find(b => isVisible(b) && (b.innerText.trim().toLowerCase() === 'comment' || b.getAttribute('aria-label')?.toLowerCase().includes('comment')))
+      , 6000);
+  
+      if (!postButton) {
+        finalStatus = "ERROR";
+        throw new Error("Submit comment button not found");
+      }
+  
+      // 5️⃣ Click the post button and wait a bit for the UI to reflect
+      try { postButton.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) {}
+      postButton.click();
+  
+      await delay(1200 + Math.random() * 1000);
+  
+      // 6️⃣ Basic confirmation: look for temporary toast or that editor cleared / comment present
+      // (we'll treat success conservatively: no immediate error and button disappears or editor cleared)
+      const editorCleared = await waitForElement(() => {
+        const ed = Array.from(document.querySelectorAll('.ql-editor[contenteditable="true"], .editor-content .ql-editor'))
+          .find(e => isVisible(e) && (e.innerText.trim() === '' || e.innerText.trim() === '\n' || e.innerHTML.trim().toLowerCase().includes('<p><br>')));
+        return ed || null;
+      }, 3000);
+  
+      finalStatus = editorCleared ? "SUCCESS" : "ERROR";
+      if (finalStatus === "ERROR") {
+        const errorEl = document.querySelector('.artdeco-toast-item__content, .artdeco-inline-feedback--error');
+        if (errorEl && /error|failed|sorry/i.test(errorEl.innerText || '')) {
+          finalStatus = "ERROR";
+        } else {
+          finalStatus = "SUCCESS";
+        }
+      }
+  
+      // update UI
+      updateStatusItem(finalStatus);
+      return { status: finalStatus, message: `Comment status: ${finalStatus}` };
+  
+    } catch (err) {
+      console.error("comment_on_post error:", err);
+      updateStatusItem('ERROR', err.message || '');
+      return { status: 'ERROR', message: err.message || 'Unknown error' };
+    } finally {
+      // remove panel after short delay so user can see result
+      setTimeout(() => {
+        const panel = document.getElementById("linkedin-status-panel");
+        if (panel) panel.remove();
+      }, 4500);
     }
   }
   
@@ -228,7 +365,6 @@ async function sendLinkedInMessage(messageText) {
   updateStatusItem(id, finalStatus);
 
   return {
-    id,
     status: finalStatus,
     message: `Message status: ${finalStatus}`
   };

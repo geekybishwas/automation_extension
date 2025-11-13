@@ -150,6 +150,184 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   
     return true;
   }
+
+  if (msg.action === "likePostsOnLinkedIn" && Array.isArray(msg.posts) && msg.posts.length) {
+    const posts = msg.posts; // each post can have { id, url }
+    stopRequested = false;
+    const likeResults = [];
+  
+    (async function processLikes() {
+      for (let index = 0; index < posts.length; index++) {
+        if (stopRequested) {
+          console.log("Stop requested. Halting like sequence.");
+          sendResponse({ status: "stopped", results: likeResults });
+          return;
+        }
+  
+        const { id, url } = posts[index];
+        console.log(`👍 [${index + 1}/${posts.length}] Liking post: ${url}`);
+  
+        try {
+          const tab = await createTab(url);
+  
+          // Wait until page fully loads
+          await waitForTabLoad(tab.id);
+  
+          // Inject content.js to handle like_post
+          await injectContentScript(tab.id, "content.js");
+  
+          // Optional: Update progress header in content script
+          chrome.tabs.sendMessage(tab.id, {
+            action: "updateStatusHeader",
+            current: index + 1,
+            total: posts.length,
+            task: "Liking Post"
+          });
+  
+          // Send like_post message and wait for response
+          const result = await new Promise((resolve) => {
+            chrome.tabs.sendMessage(tab.id, { action: "like_post" }, (response) => {
+              if (chrome.runtime.lastError) {
+                resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
+              } else {
+                resolve(response || { status: "ERROR", message: "No response from content script" });
+              }
+            });
+          });
+  
+          likeResults.push({ ...result,id, url });
+          await removeTab(tab.id);
+        } catch (err) {
+          console.error(`❌ Error liking post ${url}:`, err);
+          likeResults.push({ id, url, status: "ERROR", message: err.message });
+        }
+      }
+  
+      console.log("✅ All posts processed for liking.");
+      sendResponse({ status: "done", results: likeResults });
+    })();
+  
+    return true; // Keep channel open for async response
+  }  
+
+  if (msg.action === "commentOnLinkedInPost" && Array.isArray(msg.targets) && msg.targets.length) {
+    const posts = msg.targets; // ✅ same structure as sendMultipleMessages
+    stopRequested = false;
+    const commentResults = [];
+  
+    (async function processComments() {
+      for (let index = 0; index < posts.length; index++) {
+        if (stopRequested) {
+          console.log("Stop requested. Halting comment sequence.");
+          sendResponse({ status: "stopped", results: commentResults });
+          return;
+        }
+  
+        const { id, url, comment } = posts[index];
+        console.log(`💬 [${index + 1}/${posts.length}] Commenting on post: ${url}`);
+  
+        try {
+          const tab = await createTab(url);
+          await waitForTabLoad(tab.id);
+          await injectContentScript(tab.id, "content.js");
+  
+          // update UI
+          chrome.tabs.sendMessage(tab.id, {
+            action: "updateStatusHeader",
+            current: index + 1,
+            total: posts.length,
+            task: "Commenting on Post",
+          });
+  
+          const result = await new Promise((resolve) => {
+            chrome.tabs.sendMessage(
+              tab.id,
+              { action: "comment_on_post", comment: comment || "Great post!" },
+              (response) => {
+                if (chrome.runtime.lastError)
+                  resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
+                else resolve(response || { status: "ERROR", message: "No response from content script" });
+              }
+            );
+          });
+  
+          commentResults.push({ ...result, id, url });
+          await removeTab(tab.id);
+        } catch (err) {
+          console.error(`❌ Error commenting on post ${url}:`, err);
+          commentResults.push({ id, url, status: "ERROR", message: err.message });
+        }
+      }
+  
+      console.log("✅ All posts processed for commenting.");
+      sendResponse({ status: "done", results: commentResults });
+    })();
+  
+    return true;
+  }
+  
+
+  if (msg.action === "commentOnLinkedInPost" && Array.isArray(msg.posts) && msg.posts.length) {
+    const posts = msg.posts; // each post can have { id, url }
+    stopRequested = false;
+    const likeResults = [];
+  
+    (async function processLikes() {
+      for (let index = 0; index < posts.length; index++) {
+        if (stopRequested) {
+          console.log("Stop requested. Halting like sequence.");
+          sendResponse({ status: "stopped", results: likeResults });
+          return;
+        }
+  
+        const { message, url } = posts[index];
+        console.log(`👍 [${index + 1}/${posts.length}] Liking post: ${url}`);
+  
+        try {
+          const tab = await createTab(url);
+  
+          // Wait until page fully loads
+          await waitForTabLoad(tab.id);
+  
+          // Inject content.js to handle like_post
+          await injectContentScript(tab.id, "content.js");
+  
+          // Optional: Update progress header in content script
+          chrome.tabs.sendMessage(tab.id, {
+            action: "updateStatusHeader",
+            message : posts[index].message,
+            current: index + 1,
+            total: posts.length,
+            task: "Liking Post"
+          });
+  
+          // Send like_post message and wait for response
+          const result = await new Promise((resolve) => {
+            chrome.tabs.sendMessage(tab.id, { action: "like_post" }, (response) => {
+              if (chrome.runtime.lastError) {
+                resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
+              } else {
+                resolve(response || { status: "ERROR", message: "No response from content script" });
+              }
+            });
+          });
+  
+          likeResults.push({ ...result,id, url });
+          await removeTab(tab.id);
+        } catch (err) {
+          console.error(`❌ Error liking post ${url}:`, err);
+          likeResults.push({ id, url, status: "ERROR", message: err.message });
+        }
+      }
+  
+      console.log("✅ All posts processed for liking.");
+      sendResponse({ status: "done", results: likeResults });
+    })();
+  
+    return true; // Keep channel open for async response
+  } 
+  
+
   if (msg.action === "checkConnectionStatus" && Array.isArray(msg.connections) && msg.connections.length) {
     const profilesToCheck = msg.connections;
     stopRequested = false;
