@@ -10,12 +10,12 @@ console.log('LinkedIn Connector content script loaded');
           sendResponse({ ...result, url: message.url || location.href });
         } 
         else if (message.action === 'sendLinkedInMessage') {
-          const { message: messageText, id, url } = message;
+          const { message: messageText,url } = message;
           const result = await sendLinkedInMessage(messageText);
-          sendResponse({ ...result, id, url });
+          sendResponse({ ...result,url });
         } 
         else if (message.action === 'checkConnectionStatus') {
-          const statusResult = await checkConnectionStatus(); // no redefinition
+          const statusResult = await checkConnectionStatus(); 
           sendResponse({ ...statusResult, url: message.url || location.href });
         }
         else if(message.action === 'like_post'){
@@ -23,13 +23,9 @@ console.log('LinkedIn Connector content script loaded');
           sendResponse({ ...result, url: message.url || location.href });
         }
         else if (message.action === 'comment_on_post') {
-          const { comment, id = 0, total = 1, name = "Unknown", url } = message;
-          const result = await handleLinkedInComment(comment || "Nice post!", id, total, name);
-          sendResponse({ ...result, id, url });
-        }
-        else if (message.action === 'updateStatusHeader') {
-          updateStatusHeader(message.current, message.total);
-          sendResponse({ status: 'header updated' });
+          const { comment,url } = message;
+          const result = await handleLinkedInComment(comment || "Nice post!");
+          sendResponse({ ...result, url });
         }
       } catch (err) {
         console.error('Error handling message:', err);
@@ -40,28 +36,73 @@ console.log('LinkedIn Connector content script loaded');
   });
 
   async function likePost() {
+    let finalStatus = "FAILED";
     try {
+      // 0️⃣ Wait for LinkedIn feed/post page to load
       await waitForPageLoad();
-      createStatusPanel(); // Ensure panel is ready
-
+      createStatusPanel();
+  
+      // 1️⃣ Extract profile/post name (same logic as comment)
+      const profileName =
+        document.querySelector('.update-components-actor__title span[aria-hidden="true"]')?.innerText.trim() ||
+        document.querySelector('.feed-shared-actor__name')?.innerText.trim() ||
+        document.querySelector('h1')?.innerText.trim() ||
+        "LinkedIn Post";
+  
+      addStatusItem(profileName, "Liking post");
+  
+      // 2️⃣ Find Like button that is not already active
       const likeButton = await waitForElement(() =>
-        Array.from(document.querySelectorAll('button, div[role="button"]'))
-          .find(b => isVisible(b) && b.getAttribute('aria-pressed') === 'false' && (b.innerText.trim().toLowerCase() === 'like' || b.getAttribute('aria-label')?.toLowerCase().includes('like')))
-      , 6000);
+        Array.from(document.querySelectorAll('.feed-shared-social-action-bar__action-button button')).find(
+          b =>
+            isVisible(b) &&
+            b.getAttribute('aria-pressed') === 'false' &&
+            (
+              b.innerText.trim().toLowerCase() === 'like' ||
+              b.getAttribute('aria-label')?.toLowerCase().includes('like')
+            ) &&
+            !b.getAttribute('aria-label')?.toLowerCase().includes('comment')
+        ), 6000);      
 
+      console.log('Like button found:', likeButton);
+      await delay(5000);
+  
       if (!likeButton) {
-        return { status: 'ALREADY_LIKED', message: 'Post already liked or Like button not found.' };
+        finalStatus = "ALREADY_LIKED";
+        updateStatusItem(finalStatus, "Post already liked or Like button not found");
+        return { status: finalStatus, message: "Post already liked or Like button not found." };
       }
-
+  
+      // 3️⃣ Scroll into view and click the button
+      try { likeButton.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) {}
+      await delay(300);
       likeButton.click();
-      await delay(1500); // Wait for action to complete
-
-      return { status: 'SUCCESS', message: 'Post liked successfully.' };
-
+  
+      // 4️⃣ Wait briefly and confirm like was applied
+      await delay(1500);
+      const isNowLiked = likeButton.getAttribute('aria-pressed') === 'true';
+      finalStatus = isNowLiked ? "SUCCESS" : "ERROR";
+  
+      updateStatusItem(finalStatus, isNowLiked ? "Post liked successfully" : "Failed to confirm like");
+      await delay(1000);
+  
+      return { status: finalStatus, message: isNowLiked ? "Post liked successfully." : "Failed to confirm like." };
+  
     } catch (err) {
-      return { status: 'ERROR', message: `Failed to like post: ${err.message || 'Unknown error'}` };
+      console.error("likePost error:", err);
+      updateStatusItem('ERROR', err.message || '');
+      await delay(1000);
+      return { status: 'ERROR', message: err.message || 'Unknown error' };
+  
+    } finally {
+      // Remove panel after a short delay
+      setTimeout(() => {
+        const panel = document.getElementById("linkedin-status-panel");
+        if (panel) panel.remove();
+      }, 4500);
     }
   }
+  
 
   async function checkConnectionStatus() {
     try {
@@ -70,9 +111,9 @@ console.log('LinkedIn Connector content script loaded');
   
       const profileName = document.querySelector("h1")?.innerText.trim() || "Unknown Profile";
       const headline = document.querySelector(".text-body-medium.break-words")?.innerText.trim() || "Headline not available";
-      addStatusItem(0, 1, profileName, headline); // Add a single status item for this check
+      addStatusItem(profileName, headline); // Add a single status item for this check
   
-      // 1️⃣ Check for 'Pending' button first
+      //Check for 'Pending' button first
       const pendingBtn = await waitForElement(() =>
         Array.from(document.querySelectorAll('button[aria-label*="Pending"], button span[aria-label*="Pending"], button'))
           .find(b => isVisible(b) && (b.innerText.trim().toLowerCase().includes('pending') || b.getAttribute('aria-label')?.toLowerCase().includes('pending')))
@@ -84,7 +125,7 @@ console.log('LinkedIn Connector content script loaded');
         return { status: 'PENDING', message: 'Invitation already sent (Pending).' };
       }
   
-      // 2️⃣ Check for 'Connect' button directly on the profile
+      // Check for 'Connect' button directly on the profile
       const profileActionsContainer = document.querySelector('div.pv-top-card--list-actions') || document.querySelector('div.ph5');
       if (!profileActionsContainer) {
         updateStatusItem('ERROR', 'Profile actions container not found');
@@ -144,7 +185,7 @@ console.log('LinkedIn Connector content script loaded');
       return { status: 'CONNECTED', message: 'No "Connect" or "Pending" indicators found, assuming already connected.' };
   
     } catch (err) {
-      updateStatusItem('error', `DOM interaction failed: ${err.message || 'Unknown error'}`);
+      updateStatusItem('ERROR', `DOM interaction failed: ${err.message || 'Unknown error'}`);
       await delay(1000);
       return { status: 'ERROR', message: `DOM interaction failed: ${err.message || 'Unknown error'}` };
     } finally {
@@ -169,7 +210,7 @@ console.log('LinkedIn Connector content script loaded');
       document.querySelector('h1')?.innerText.trim() ||
       "LinkedIn Post";
 
-      addStatusItem(0, 1, profileName, "Commenting on post");
+      addStatusItem(profileName, "Commenting on post");
   
       // 1️⃣ Ensure the Comment trigger button is visible and click it
       // selector: the feed comment trigger uses aria-label="Comment" and class includes "comment-button"
@@ -220,10 +261,6 @@ console.log('LinkedIn Connector content script loaded');
         throw new Error("Submit comment button not found");
       }
   
-      // 5️⃣ Click the post button and wait a bit for the UI to reflect
-      try { postButton.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) {}
-      postButton.click();
-  
       await delay(1200 + Math.random() * 1000);
   
       // 6️⃣ Basic confirmation: look for temporary toast or that editor cleared / comment present
@@ -246,11 +283,13 @@ console.log('LinkedIn Connector content script loaded');
   
       // update UI
       updateStatusItem(finalStatus);
+      await delay(1000);
       return { status: finalStatus, message: `Comment status: ${finalStatus}` };
   
     } catch (err) {
       console.error("comment_on_post error:", err);
       updateStatusItem('ERROR', err.message || '');
+      await delay(1000);
       return { status: 'ERROR', message: err.message || 'Unknown error' };
     } finally {
       // remove panel after short delay so user can see result
@@ -264,8 +303,6 @@ console.log('LinkedIn Connector content script loaded');
 
 async function sendLinkedInMessage(messageText) {
   let finalStatus = "FAILED"; // Default status
-  const total = 1;
-  const id = 0;
 
   try {
     console.log("🔍 Starting message sending process...");
@@ -276,7 +313,7 @@ async function sendLinkedInMessage(messageText) {
     const profileName = document.querySelector("h1")?.innerText.trim() || "Unknown Profile";
     const headline = document.querySelector(".text-body-medium.break-words")?.innerText.trim() || "Headline not available";
 
-    addStatusItem(id, total, profileName, headline);
+    addStatusItem(profileName, headline);
 
     await closeAnyOpenMessagePanels();
     await delay(800);
@@ -362,7 +399,7 @@ async function sendLinkedInMessage(messageText) {
   }
 
   // ✅ Always update the status panel
-  updateStatusItem(id, finalStatus);
+  updateStatusItem(finalStatus);
 
   return {
     status: finalStatus,
@@ -410,8 +447,7 @@ async function insertTextProperly(element, text, delayTime = 50) {
 }
 
 
-async function handleConnectionRequest({ note, id, total, name }) {
-  console.log(`Starting connection request for ${name} (${id + 1}/${total})`);
+async function handleConnectionRequest({ note,name }) {
   let finalStatus = 'FAILED'; // Default to FAILED
   
   try {
@@ -421,23 +457,22 @@ async function handleConnectionRequest({ note, id, total, name }) {
     const profileName = document.querySelector("h1")?.innerText.trim() || name || "Unknown Profile";
     const headline = document.querySelector(".text-body-medium.break-words")?.innerText.trim() || "Headline not available";
 
-    addStatusItem(id, total, profileName, headline);
+    addStatusItem(profileName, headline);
     
     // Attempt to send connection request
-    const requestResult = await sendConnectionRequest(note, id);
+    const requestResult = await sendConnectionRequest(note);
     finalStatus = requestResult.status; // Get status from the detailed result
     
   } catch (error) {
     finalStatus = 'error'; // Catch any unexpected errors during the process
   } finally {
-    updateStatusItem(id, finalStatus); // Always update the status item
-    return { id, status: finalStatus }; // Return final status
+    updateStatusItem(finalStatus); // Always update the status item
+    return { status: finalStatus }; // Return final status
   }
 }
 
-async function sendConnectionRequest(note, id) {
+async function sendConnectionRequest(note) {
   console.log('Looking for Connect button...');
-  let currentStatus = 'processing';
 
   try {
 
@@ -513,10 +548,11 @@ async function sendConnectionRequest(note, id) {
     // ✅ Fallback detection (toast, modal, errors)
     const result = await detectConnectionResult();
     console.log("🔍 detectConnectionResult():", result);
+    
+    updateStatusItem(result); 
+    await delay(1000);
 
     return { status: result, message: result };
-
-
 
   } catch (error) {
     return { status: 'error', message: error.message };
@@ -675,8 +711,6 @@ async function detectConnectionResult() {
   // it's an unknown state. Consider it a failure for safety.
   return 'FAILED'; 
 }
-
-// ... (other functions like waitForElement, delay, createStatusPanel, addStatusItem, updateStatusHeader remain similar)
 
 function updateStatusItem(status, message = '') { // Added message parameter
   const el = document.getElementById(`linkedin-status`);
@@ -847,12 +881,12 @@ document.getElementById("stop-btn")?.addEventListener("click", () => {
 
 }
 
-function addStatusItem(id, total, name, headline) {
+function addStatusItem(name, headline) {
   const list = document.getElementById("linkedin-status-list");
   if (!list) return;
 
   const item = document.createElement("div");
-  item.id = `linkedin-status-item-${id}`;
+  item.id = `linkedin-status-item`;
   item.style.display = "flex";
   item.style.justifyContent = "space-between";
   item.style.alignItems = "center";
@@ -864,19 +898,12 @@ function addStatusItem(id, total, name, headline) {
       <div style="font-weight:500">${name || "Unknown"}</div>
       <div style="font-size:12px;color:#666">${headline || ""}</div>
     </div>
-    <span id="linkedin-status-${id}" style="display:flex;align-items:center;justify-content:center;">
+    <span id="linkedin-status" style="display:flex;align-items:center;justify-content:center;">
     <div class="linkedin-spinner"></div>
    </span>
   `;
 
   list.appendChild(item);
-}
-
-function updateStatusHeader(current, total) {
-  const header = document.getElementById("linkedin-task-header");
-  if (header) {
-    header.textContent = `Executing task ${current} of ${total}`;
-  }
 }
 
 function updateStatusItem(status) {

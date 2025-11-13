@@ -34,12 +34,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 
           await injectContentScript(tab.id, "content.js");
 
-          // Update status header in content.js
-          chrome.tabs.sendMessage(tab.id, {
-            action: "updateStatusHeader",
-            current: index + 1,
-            total: connections.length
-          });
+     
 
           // Send connection request and wait for response
           const result = await sendConnectionRequest(tab.id, note, id, connections.length, 'Biswas', url);
@@ -47,6 +42,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 
 
           // Close the tab before moving to next
+          await delay(1000);
           await removeTab(tab.id);
 
         } catch (error) {
@@ -83,16 +79,13 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           await injectContentScript(tab.id, "content.js");
 
           // Update header (like connection flow)
-          chrome.tabs.sendMessage(tab.id, {
-            action: "updateStatusHeader",
-            current: index + 1,
-            total: targets.length,
-          });
+        
 
           // Core message sending
           const result = await sendMessageToProfile(tab.id, message, id, targets.length, 'Bishwas', url);
           connectionResults.push({ ...result, id, url });
 
+          await delay(1000);
           await removeTab(tab.id);
         } catch (error) {
           console.error(`❌ Error on ${url}:`, error);
@@ -133,6 +126,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   
           connectionResults.push({ id: profile.id, url, status: "SUCCESS" });
   
+          await delay(1000);
           await removeTab(tab.id);
         } catch (error) {
           console.error(`Error viewing ${url}:`, error);
@@ -176,13 +170,6 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           // Inject content.js to handle like_post
           await injectContentScript(tab.id, "content.js");
   
-          // Optional: Update progress header in content script
-          chrome.tabs.sendMessage(tab.id, {
-            action: "updateStatusHeader",
-            current: index + 1,
-            total: posts.length,
-            task: "Liking Post"
-          });
   
           // Send like_post message and wait for response
           const result = await new Promise((resolve) => {
@@ -196,6 +183,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           });
   
           likeResults.push({ ...result,id, url });
+          await delay(1000);
           await removeTab(tab.id);
         } catch (err) {
           console.error(`❌ Error liking post ${url}:`, err);
@@ -211,7 +199,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }  
 
   if (msg.action === "commentOnLinkedInPost" && Array.isArray(msg.targets) && msg.targets.length) {
-    const posts = msg.targets; // ✅ same structure as sendMultipleMessages
+    const posts = msg.targets; 
     stopRequested = false;
     const commentResults = [];
   
@@ -231,14 +219,6 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           await waitForTabLoad(tab.id);
           await injectContentScript(tab.id, "content.js");
   
-          // update UI
-          chrome.tabs.sendMessage(tab.id, {
-            action: "updateStatusHeader",
-            current: index + 1,
-            total: posts.length,
-            task: "Commenting on Post",
-          });
-  
           const result = await new Promise((resolve) => {
             chrome.tabs.sendMessage(
               tab.id,
@@ -252,6 +232,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           });
   
           commentResults.push({ ...result, id, url });
+          await delay(1000);
           await removeTab(tab.id);
         } catch (err) {
           console.error(`❌ Error commenting on post ${url}:`, err);
@@ -265,68 +246,6 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   
     return true;
   }
-  
-
-  if (msg.action === "commentOnLinkedInPost" && Array.isArray(msg.posts) && msg.posts.length) {
-    const posts = msg.posts; // each post can have { id, url }
-    stopRequested = false;
-    const likeResults = [];
-  
-    (async function processLikes() {
-      for (let index = 0; index < posts.length; index++) {
-        if (stopRequested) {
-          console.log("Stop requested. Halting like sequence.");
-          sendResponse({ status: "stopped", results: likeResults });
-          return;
-        }
-  
-        const { message, url } = posts[index];
-        console.log(`👍 [${index + 1}/${posts.length}] Liking post: ${url}`);
-  
-        try {
-          const tab = await createTab(url);
-  
-          // Wait until page fully loads
-          await waitForTabLoad(tab.id);
-  
-          // Inject content.js to handle like_post
-          await injectContentScript(tab.id, "content.js");
-  
-          // Optional: Update progress header in content script
-          chrome.tabs.sendMessage(tab.id, {
-            action: "updateStatusHeader",
-            message : posts[index].message,
-            current: index + 1,
-            total: posts.length,
-            task: "Liking Post"
-          });
-  
-          // Send like_post message and wait for response
-          const result = await new Promise((resolve) => {
-            chrome.tabs.sendMessage(tab.id, { action: "like_post" }, (response) => {
-              if (chrome.runtime.lastError) {
-                resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
-              } else {
-                resolve(response || { status: "ERROR", message: "No response from content script" });
-              }
-            });
-          });
-  
-          likeResults.push({ ...result,id, url });
-          await removeTab(tab.id);
-        } catch (err) {
-          console.error(`❌ Error liking post ${url}:`, err);
-          likeResults.push({ id, url, status: "ERROR", message: err.message });
-        }
-      }
-  
-      console.log("✅ All posts processed for liking.");
-      sendResponse({ status: "done", results: likeResults });
-    })();
-  
-    return true; // Keep channel open for async response
-  } 
-  
 
   if (msg.action === "checkConnectionStatus" && Array.isArray(msg.connections) && msg.connections.length) {
     const profilesToCheck = msg.connections;
@@ -386,6 +305,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         } finally {
           // 5️⃣ Close tab
           if (tabId) {
+            await delay(1000);
             await removeTab(tabId).catch(() => {});
           }
         }
