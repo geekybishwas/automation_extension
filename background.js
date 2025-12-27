@@ -1,419 +1,382 @@
-// background.js - Handle external messages and tab management
-let stopRequested = false;
-let connectionResults = []; // Stores results for external app
+// ============================================================================
+// BACKGROUND SERVICE WORKER - LinkedIn Automation Extension
+// ============================================================================
 
-// Utility delay
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+import { CONFIG,getUserMessage } from './config.js';
+import { TabManager } from './modules/TabManager.js';
+import { ActionProcessor } from './modules/ActionProcessor.js';
+import { Logger } from './modules/Logger.js';
+
+// ============================================================================
+// STATE MANAGEMENT
+// ============================================================================
+
+class ExtensionState {
+  constructor() {
+    this.stopRequested = false;
+    this.currentResults = [];
+    this.currentAction = null;
+  }
+
+  reset() {
+    this.stopRequested = false;
+    this.currentResults = [];
+    this.currentAction = null;
+  }
+
+  addResult(result) {
+    this.currentResults.push(result);
+  }
+
+  requestStop() {
+    this.stopRequested = true;
+    Logger.info('Stop requested by user');
+  }
 }
 
-// Main listener for external requests
-chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
-  if (msg.action === "connectMultiple" && Array.isArray(msg.connections) && msg.connections.length) {
-    const connections = msg.connections;
-    stopRequested = false;
-    connectionResults = []; 
+const state = new ExtensionState();
 
-    (async function processConnections() {
-      for (let index = 0; index < connections.length; index++) {
-        if (stopRequested) {
-          console.log("Stop requested. Halting sequence.");
-          sendResponse({ status: "stopped", results: connectionResults });
-          return;
-        }
+// ============================================================================
+// ACTION HANDLERS REGISTRY
+// ============================================================================
 
-        const { id, url, note } = connections[index];
+const ACTION_HANDLERS = {
+  likePostsOnLinkedIn: handleLikePosts,
+  commentOnLinkedInPost: handleCommentPosts,
+  connectMultiple: handleConnections,
+  sendMultipleMessages: handleMessages,
+  viewProfiles: handleProfileViews,
+  checkConnectionStatus: handleStatusChecks,
+  stopProcessing: handleStop
+};
 
-        console.log(`Processing connection ${index + 1}/${connections.length}: ${url}`);
+// ============================================================================
+// MAIN MESSAGE LISTENER
+// ============================================================================
 
-        try {
-          const tab = await createTab(url);
-
-          // Wait a few seconds for LinkedIn to load dynamic content
-          await delay(3000);
-
-          await injectContentScript(tab.id, "content.js");
-
-     
-
-          // Send connection request and wait for response
-          const result = await sendConnectionRequest(tab.id, note, id, connections.length, 'Biswas', url);
-          connectionResults.push({ ...result, id, url });
+console.log("Service worker started successfully!");
 
 
-          // Close the tab before moving to next
-          await delay(1000);
-          await removeTab(tab.id);
-
-        } catch (error) {
-          console.error(`Error processing ${url}:`, error);
-          connectionResults.push({ index, url, status: 'error', message: error.message });
-        }
-      }
-
-      console.log("All connections processed.");
-      sendResponse({ status: "done", results: connectionResults });
-    })();
-
-    return true; // Keep channel open for async response
-  }
-
-  if (msg.action === "sendMultipleMessages" && Array.isArray(msg.targets) && msg.targets.length) {
-    const targets = msg.targets;
-    stopRequested = false;
-    connectionResults = [];
-
-    (async function processMessages() {
-      for (let index = 0; index < targets.length; index++) {
-        if (stopRequested) {
-          sendResponse({ status: "stopped", results: connectionResults });
-          return;
-        }
-
-        const { id, url, message } = targets[index];
-        console.log(`📨 [${index + 1}/${targets.length}] Sending message to: ${url}`);
-
-        try {
-          const tab = await createTab(url);
-          await delay(3000);
-          await injectContentScript(tab.id, "content.js");
-
-          // Update header (like connection flow)
-        
-
-          // Core message sending
-          const result = await sendMessageToProfile(tab.id, message, id, targets.length, 'Bishwas', url);
-          connectionResults.push({ ...result, id, url });
-
-          await delay(1000);
-          await removeTab(tab.id);
-        } catch (error) {
-          console.error(`❌ Error on ${url}:`, error);
-          connectionResults.push({ id, url, status: "error", message: error.message });
-        }
-      }
-
-      console.log("✅ All messages processed.");
-      sendResponse({ status: "done", results: connectionResults });
-    })();
-
-    return true;
-  }
-
-  if (msg.action === "viewProfiles" && Array.isArray(msg.urls) && msg.urls.length) {
-    const profiles = msg.urls;
-    stopRequested = false;
-    connectionResults = [];
-  
-    (async function processProfileViews() {
-      for (let index = 0; index < profiles.length; index++) {
-        if (stopRequested) {
-          sendResponse({ status: "stopped", results: connectionResults });
-          return;
-        }
-  
-        const profile = profiles[index];
-        const url = profile.url;
-  
-        try {
-          const tab = await createTab(url);
-  
-          // Wait for the page to fully load
-          await waitForTabLoad(tab.id);
-  
-          // Then wait human-like time before closing
-          await delay(4000 + Math.random() * 2000); 
-  
-          connectionResults.push({ id: profile.id, url, status: "SUCCESS" });
-  
-          await delay(1000);
-          await removeTab(tab.id);
-        } catch (error) {
-          console.error(`Error viewing ${url}:`, error);
-          connectionResults.push({
-            id: profile.id,
-            url,
-            status: "error",
-            message: error.message,
-          });
-        }
-      }
-  
-      sendResponse({ status: "done", results: connectionResults });
-    })();
-  
-    return true;
-  }
-
-  if (msg.action === "likePostsOnLinkedIn" && Array.isArray(msg.posts) && msg.posts.length) {
-    const posts = msg.posts; // each post can have { id, url }
-    stopRequested = false;
-    const likeResults = [];
-  
-    (async function processLikes() {
-      for (let index = 0; index < posts.length; index++) {
-        if (stopRequested) {
-          console.log("Stop requested. Halting like sequence.");
-          sendResponse({ status: "stopped", results: likeResults });
-          return;
-        }
-  
-        const { id, url } = posts[index];
-        console.log(`👍 [${index + 1}/${posts.length}] Liking post: ${url}`);
-  
-        try {
-          const tab = await createTab(url);
-  
-          // Wait until page fully loads
-          await waitForTabLoad(tab.id);
-  
-          // Inject content.js to handle like_post
-          await injectContentScript(tab.id, "content.js");
-  
-  
-          // Send like_post message and wait for response
-          const result = await new Promise((resolve) => {
-            chrome.tabs.sendMessage(tab.id, { action: "like_post" }, (response) => {
-              if (chrome.runtime.lastError) {
-                resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
-              } else {
-                resolve(response || { status: "ERROR", message: "No response from content script" });
-              }
-            });
-          });
-  
-          likeResults.push({ ...result,id, url });
-          await delay(1000);
-          await removeTab(tab.id);
-        } catch (err) {
-          console.error(`❌ Error liking post ${url}:`, err);
-          likeResults.push({ id, url, status: "ERROR", message: err.message });
-        }
-      }
-  
-      console.log("✅ All posts processed for liking.");
-      sendResponse({ status: "done", results: likeResults });
-    })();
-  
-    return true; // Keep channel open for async response
-  }  
-
-  if (msg.action === "commentOnLinkedInPost" && Array.isArray(msg.targets) && msg.targets.length) {
-    const posts = msg.targets; 
-    stopRequested = false;
-    const commentResults = [];
-  
-    (async function processComments() {
-      for (let index = 0; index < posts.length; index++) {
-        if (stopRequested) {
-          console.log("Stop requested. Halting comment sequence.");
-          sendResponse({ status: "stopped", results: commentResults });
-          return;
-        }
-  
-        const { id, url, comment } = posts[index];
-        console.log(`💬 [${index + 1}/${posts.length}] Commenting on post: ${url}`);
-  
-        try {
-          const tab = await createTab(url);
-          await waitForTabLoad(tab.id);
-          await injectContentScript(tab.id, "content.js");
-  
-          const result = await new Promise((resolve) => {
-            chrome.tabs.sendMessage(
-              tab.id,
-              { action: "comment_on_post", comment: comment || "Great post!" },
-              (response) => {
-                if (chrome.runtime.lastError)
-                  resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
-                else resolve(response || { status: "ERROR", message: "No response from content script" });
-              }
-            );
-          });
-  
-          commentResults.push({ ...result, id, url });
-          await delay(1000);
-          await removeTab(tab.id);
-        } catch (err) {
-          console.error(`❌ Error commenting on post ${url}:`, err);
-          commentResults.push({ id, url, status: "ERROR", message: err.message });
-        }
-      }
-  
-      console.log("✅ All posts processed for commenting.");
-      sendResponse({ status: "done", results: commentResults });
-    })();
-  
-    return true;
-  }
-
-  if (msg.action === "checkConnectionStatus" && Array.isArray(msg.connections) && msg.connections.length) {
-    const profilesToCheck = msg.connections;
-    stopRequested = false;
-    connectionResults = [];
-  
-    (async function processStatusChecks() {
-      for (let i = 0; i < profilesToCheck.length; i++) {
-        if (stopRequested) {
-          sendResponse({ status: "stopped", results: connectionResults });
-          return;
-        }
-  
-        const { id, url } = profilesToCheck[i];
-        console.log(`🔎 [${i + 1}/${profilesToCheck.length}] Checking connection for ID: ${id}, URL: ${url}`);
-  
-        let tabId = null;
-  
-        try {
-          // 1️⃣ Create new tab
-          const tab = await createTab(url);
-          tabId = tab.id;
-          await waitForTabLoad(tabId);
-  
-          // 2️⃣ Inject content script dynamically
-          await injectContentScript(tabId, "content.js");
-  
-          // 3️⃣ Send message to content.js
-          const contentResponse = await new Promise((resolve) => {
-            chrome.tabs.sendMessage(tabId, { action: "checkConnectionStatus" }, (response) => {
-              if (chrome.runtime.lastError) {
-                console.error(`❌ Error on tab ${tabId}:`, chrome.runtime.lastError.message);
-                resolve({ status: "ERROR", message: chrome.runtime.lastError.message });
-              } else {
-                // Ensure a response object is always returned
-                resolve(response || { status: "ERROR", message: "No response from content script." });
-              }
-            });
-          });
-  
-          // 4️⃣ Store results
-          connectionResults.push({
-            id,
-            url,
-            status: contentResponse.status,
-            message: contentResponse.message || "",
-          });
-  
-        } catch (error) {
-          console.error(`❌ Failed to check connection for ID: ${id}, URL: ${url}:`, error);
-          connectionResults.push({
-            id,
-            url,
-            status: "ERROR",
-            message: error.message || "Unknown error",
-          });
-        } finally {
-          // 5️⃣ Close tab
-          if (tabId) {
-            await delay(1000);
-            await removeTab(tabId).catch(() => {});
-          }
-        }
-      }
-  
-      console.log("✅ All profiles checked. Results:", connectionResults);
-      sendResponse({ status: "done", results: connectionResults });
-    })();
-  
-    return true; // Keep channel open for async response
-  }
-});
-
-function sendMessageToProfile(tabId, message, id, total, name, url) {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, {
-      action: "sendLinkedInMessage",
-      message,
-      id,
-      total,
-      name,
-      url
-    }, response => {
-      if (chrome.runtime.lastError) {
-        console.error(`Message error to content.js for tab ${tabId}: ${chrome.runtime.lastError.message}`);
-        resolve({ id, status: 'error', message: chrome.runtime.lastError.message });
-      } else if (response) {
-        resolve(response);
-      } else {
-        console.warn(`No response from content script for tab ${tabId}.`);
-        resolve({ id, status: 'failed', message: 'No response from content script.' });
-      }
-    });
-  });
-}
-
-
-// Stop signal listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "stopProcessing") {
-    console.log("Stop signal received from panel");
-    stopRequested = true;
-    sendResponse({ status: "stopping" });
+  if (message.action === "ping") {
+    sendResponse({ status: "ok" });
+  }
+  return true;
+});
+
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  const handler = ACTION_HANDLERS[message.action];
+  
+  if (!handler) {
+    sendResponse({ 
+      status: 'error', 
+      message: `Unknown action: ${message.action}` 
+    });
+    return false;
+  }
+
+  // Execute handler asynchronously
+  handler(message, sendResponse).catch(error => {
+    Logger.error(`Handler failed for ${message.action}:`, error);
+    sendResponse({ 
+      status: 'error', 
+      message: error.message 
+    });
+  });
+
+  return true; // Keep channel open for async response
+});
+
+// Internal message listener (for popup/content scripts)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'stopProcessing') {
+    handleStop(message, sendResponse);
+    return false;
   }
 });
 
-// --- Helper functions ---
+// ============================================================================
+// ACTION HANDLER IMPLEMENTATIONS
+// ============================================================================
 
-function createTab(url) {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.create({ url, active: true }, tab => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(`Tab creation error: ${chrome.runtime.lastError.message}`));
-      } else {
-        resolve(tab);
-      }
+async function handleLikePosts(message, sendResponse) {
+  const { posts } = message;
+  
+  if (!Array.isArray(posts) || posts.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid posts data' 
     });
+  }
+
+  state.reset();
+  state.currentAction = 'like';
+
+  const processor = new ActionProcessor({
+    items: posts,
+    action: 'like_post',
+    contentScript: 'content.js',
+    getItemData: (post, index, total) => ({
+      action: 'like_post',
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
   });
 }
 
-function removeTab(tabId) {
-  return new Promise((resolve) => {
-    chrome.tabs.remove(tabId, () => resolve());
+async function handleCommentPosts(message, sendResponse) {
+  const { targets } = message;
+  
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid targets data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'comment';
+
+  const processor = new ActionProcessor({
+    items: targets,
+    action: 'comment_on_post',
+    contentScript: 'content.js',
+    getItemData: (item, index, total) => ({
+      action: 'comment_on_post',
+      comment: item.comment || 'Great post!',
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
   });
 }
 
-function injectContentScript(tabId, scriptFile) {
-  return chrome.scripting.executeScript({
-    target: { tabId },
-    files: [scriptFile]
-  }).then(() => {
-    console.log("Content script injected successfully");
-  }).catch(err => {
-    throw new Error(`Script injection error: ${err.message}`);
-  });
-}
+async function handleConnections(message, sendResponse) {
+  const { connections } = message;
+  
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid connections data' 
+    });
+  }
 
-function sendConnectionRequest(tabId, note, id, total, name, url) {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, {
-      action: "sendConnectionRequest",
-      note: note || "Hi, I'd like to connect with you on LinkedIn.",
-      id,
+  state.reset();
+  state.currentAction = 'connect';
+
+  const processor = new ActionProcessor({
+    items: connections,
+    action: 'sendConnectionRequest',
+    contentScript: 'content.js',
+    pageLoadDelay: CONFIG.delays.pageLoad,
+    getItemData: (item, index, total) => ({
+      action: 'sendConnectionRequest',
+      note: item.note || CONFIG.defaults.connectionNote,
+      id: item.id,
+      current: index + 1,
       total,
-      name,
-      url
-    }, response => {
-      if (chrome.runtime.lastError) {
-        console.error(`Message error to content.js for tab ${tabId}: ${chrome.runtime.lastError.message}`);
-        resolve({ id, status: 'error', message: chrome.runtime.lastError.message });
-      } else if (response) {
-        resolve(response);
-      } else {
-        console.warn(`No response from content script for tab ${tabId}.`);
-        resolve({ id, status: 'failed', message: 'No response from content script.' });
-      }
-    });
+      url: item.url
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
   });
 }
 
-async function waitForTabLoad(tabId) {
-  return new Promise((resolve) => {
-    const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === "complete") {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
+async function handleMessages(message, sendResponse) {
+  const { targets } = message;
+  
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid targets data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'message';
+
+  const processor = new ActionProcessor({
+    items: targets,
+    action: 'sendLinkedInMessage',
+    contentScript: 'content.js',
+    pageLoadDelay: CONFIG.delays.pageLoad,
+    getItemData: (item, index, total) => ({
+      action: 'sendLinkedInMessage',
+      message: item.message,
+      id: item.id,
+      current: index + 1,
+      total,
+      url: item.url
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
   });
 }
+
+async function handleProfileViews(message, sendResponse) {
+  const { urls } = message;
+  
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid urls data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'view';
+
+  const processor = new ActionProcessor({
+    items: urls,
+    action: 'viewProfile', // Changed from null to 'viewProfile'
+    contentScript: 'content.js',
+    skipContentScriptAction: false, // Changed to false so content script runs
+    pageLoadDelay: CONFIG.delays.profileView + Math.random() * 2000,
+    getItemData: (item, index, total) => ({
+      action: 'viewProfile', // Pass action to content script
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+// async function handleProfileViews(message, sendResponse) {
+//   const { urls } = message;
+  
+//   if (!Array.isArray(urls) || urls.length === 0) {
+//     return sendResponse({ 
+//       status: 'error', 
+//       message: 'Invalid urls data' 
+//     });
+//   }
+
+//   state.reset();
+//   state.currentAction = 'view';
+
+//   const processor = new ActionProcessor({
+//     items: urls,
+//     action: null, // View only, no content script action needed
+//     contentScript: 'content.js',
+//     skipContentScriptAction: true,
+//     pageLoadDelay: CONFIG.delays.profileView + Math.random() * 2000,
+//     getItemData: (item) => ({}),
+//     onItemComplete: (result, item) => {
+//       state.addResult({ 
+//         id: item.id, 
+//         url: item.url, 
+//         status: 'SUCCESS' ,
+//         value: getUserMessage('viewProfile', 'SUCCESS') 
+//       });
+//     },
+//     shouldStop: () => state.stopRequested
+//   });
+
+//   const results = await processor.processAll();
+  
+//   sendResponse({
+//     status: state.stopRequested ? 'stopped' : 'done',
+//     results
+//   });
+// }
+
+async function handleStatusChecks(message, sendResponse) {
+  const { connections } = message;
+  
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid connections data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'status_check';
+
+  const processor = new ActionProcessor({
+    items: connections,
+    action: 'checkConnectionStatus',
+    contentScript: 'content.js',
+    getItemData: (item, index, total) => ({
+      action: 'checkConnectionStatus',
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ 
+        id: item.id, 
+        url: item.url,
+        status: result.status,
+        message: result.message || ''
+      });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+
+async function handleStop(message, sendResponse) {
+  state.requestStop();
+  sendResponse({ status: 'stopping' });
+}
+
+// ============================================================================
+// LIFECYCLE
+// ============================================================================
+
+Logger.info('LinkedIn Automation Extension - Background service worker loaded');

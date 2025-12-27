@@ -1,4 +1,4 @@
-{
+ {
   "manifest_version": 3,
   "name": "Reasonyx: B2B email and phone finder + LinkedIn automation",
   "description": "Helps users streamline professional networking actions on supported pages.",
@@ -12,19 +12,39 @@
     "https://www.linkedin.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
   },
   "externally_connectable": {
     "matches": [
-      "https://app.reasonyx.com/*",
-      "https://app.dev.reasonyx.com/*",
+      "https://syncgtm.com/*",
+      "https://app.dev.syncgtm.com/*",
       "http://localhost:3000/*"
     ]
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content.js",
+        "content/*.js",
+        "modules/*.js",
+        "icons/*.png",
+        "config.js"
+      ],
+      "matches": ["https://www.linkedin.com/*"]
+    }
+  ],
   "icons": {
     "16": "icons/16.png",
     "48": "icons/48.png",
     "128": "icons/128.png"
   }
 }
-  
