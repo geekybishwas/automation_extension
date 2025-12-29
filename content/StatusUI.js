@@ -21,10 +21,32 @@ export class StatusUI {
     }
 
     const panel = this._createPanelElement();
+    
+    // Hide panel initially
+    panel.style.opacity = '0';
+    panel.style.transform = 'translateY(20px)';
+    panel.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    
     document.body.appendChild(panel);
 
     this._injectStyles();
     this._attachEventListeners();
+    
+    // Don't show yet - wait for content to be added
+  }
+
+  /**
+   * Show the panel with animation (called after content is added)
+   */
+  static show() {
+    const panel = document.getElementById(this.PANEL_ID);
+    if (!panel) return;
+
+    // Small delay to ensure DOM has updated
+    setTimeout(() => {
+      panel.style.opacity = '1';
+      panel.style.transform = 'translateY(0)';
+    }, 50);
   }
 
   /**
@@ -81,6 +103,10 @@ export class StatusUI {
     `;
 
     list.appendChild(item);
+    
+    // Show panel now that content is added
+    this.show();
+    
     return itemId;
   }
 
@@ -146,6 +172,7 @@ export class StatusUI {
       z-index: 999999;
     `;
 
+    // Try to get logo URL, fallback to emoji if fails
     let logoHTML = '🔗'; // Fallback emoji
     try {
       const logoURL = chrome.runtime.getURL('icons/128.png');
