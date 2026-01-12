@@ -180,14 +180,13 @@ export class LinkedInActions {
       // Find and click Send
       const sendBtn = await LinkedInDOM.waitForElement(() =>
         Array.from(document.querySelectorAll(CONFIG.selectors.sendButton))
-          .find(btn => LinkedInDOM.isVisible(btn) && !btn.disabled &&
-                btn.innerText.trim().toLowerCase() === 'send')
+      .find(btn => LinkedInDOM.isVisible(btn) && !btn.disabled &&
+      btn.innerText.trim().toLowerCase() === 'send')
       , 7000);
-
+      
       if (!sendBtn) {
         throw new Error('Send button not found');
       }
-
       await LinkedInDOM.clickElement(sendBtn);
       await delay(2500);
 
@@ -229,6 +228,8 @@ export class LinkedInActions {
           message: 'Invitation already pending'
         };
       }
+
+      console.log('Checking for Connect button...');
 
       // Check for Connect button
       const connectInfo = await LinkedInDOM.findConnectButton();

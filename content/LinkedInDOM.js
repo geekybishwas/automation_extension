@@ -99,9 +99,7 @@ export class LinkedInDOM {
       if (!this.isVisible(btn)) return false;
       
       const btnText = btn.innerText.trim().toLowerCase();
-      const aria = btn.getAttribute('aria-label')?.toLowerCase() || '';
-      
-      return btnText === text.toLowerCase() || aria.includes(text.toLowerCase());
+      return btnText === text.toLowerCase();
     });
   }
 
@@ -213,6 +211,9 @@ export class LinkedInDOM {
     await delay(500); // Wait for dropdown animation
 
     const connectBtn = this.findVisibleButton('connect', dropdown);
+
+    await delay(1000);
+
     return connectBtn ? { button: connectBtn, inDropdown: true } : null;
   }
 
@@ -222,6 +223,7 @@ export class LinkedInDOM {
   static async detectConnectionResult() {
     // Success indicators
     const successToast = document.querySelector('[role="alert"] .artdeco-toast-item__content');
+
     if (successToast?.innerText.toLowerCase().includes('invitation sent')) {
       return CONFIG.statuses.SUCCESS;
     }
@@ -229,11 +231,17 @@ export class LinkedInDOM {
     // Check for Pending button
     const pendingBtn = await this.waitForElement(CONFIG.selectors.pendingButton, 2000);
     if (pendingBtn) {
+      console.log('Pending button found, indicating connection request is still pending.');
       return CONFIG.statuses.SUCCESS;
     }
 
+    console.log('No pending button found, checking for limit/error modals...');
+
     // Check for limit/error modals
     const modal = document.querySelector(CONFIG.selectors.modal);
+
+    console.log('Modal found:', !!modal);
+
     if (modal) {
       const text = modal.innerText.toLowerCase();
       
@@ -257,7 +265,7 @@ export class LinkedInDOM {
       return CONFIG.statuses.FAILED;
     }
 
-    return CONFIG.statuses.FAILED;
+    return CONFIG.statuses.SUCCESS;
   }
 
   /**

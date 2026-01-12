@@ -53,6 +53,9 @@ export const CONFIG = {
       
       // Like button
       likeButton: '.feed-shared-social-action-bar__action-button button',
+
+      //Post Container
+      container: '.feed-shared-update-v2 feed-shared-update-v2--minimal-padding',
       
       // Messaging
       messageInput: 'div.msg-form__contenteditable[role="textbox"]',
