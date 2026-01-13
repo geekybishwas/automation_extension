@@ -156,7 +156,7 @@ export const CONFIG = {
     // Logging
     logging: {
       enabled: true,
-      logLevel: 'info' // 'debug', 'info', 'warn', 'error'
+      logLevel: 'info'
     }
   };
   
