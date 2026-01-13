@@ -44,7 +44,7 @@ const ACTION_HANDLERS = {
   likePostsOnLinkedIn: handleLikePosts,
   commentOnLinkedInPost: handleCommentPosts,
   connectMultiple: handleConnections,
-  sendMultipleMessages: handleMessages,
+  sendMessage: handleMessages,
   viewProfiles: handleProfileViews,
   checkConnectionStatus: handleStatusChecks,
   stopProcessing: handleStop
