@@ -1,100 +1,382 @@
+// ============================================================================
+// BACKGROUND SERVICE WORKER - LinkedIn Automation Extension
+// ============================================================================
 
-let stopRequested = false;
+import { CONFIG,getUserMessage } from './config.js';
+import { TabManager } from './modules/TabManager.js';
+import { ActionProcessor } from './modules/ActionProcessor.js';
+import { Logger } from './modules/Logger.js';
 
-// background.js - Handle external messages and tab management
-chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
-  if (msg.action === "connectMultiple" && Array.isArray(msg.connections) && msg.connections.length) {
-    const connections = msg.connections;
-    let index = 0;
-    stopRequested = false;
+// ============================================================================
+// STATE MANAGEMENT
+// ============================================================================
 
-    stopRequested = false;
-
-    function next() {
-      if (stopRequested) {
-        console.log("Stop requested. Halting sequence.");
-        return sendResponse({ status: "stopped" });
-      }
-
-      if (index >= connections.length) {
-        return sendResponse({ status: "done" });
-      }
-
-      const { url, note } = connections[index];
-
-      console.log(`Processing connection ${index + 1}/${connections.length}: ${url}`);
-      
-      chrome.tabs.create({ url: url, active: true }, (tab) => {
-        if (chrome.runtime.lastError) {
-          console.error('Tab creation error:', chrome.runtime.lastError);
-          index++;
-          next();
-          return;
-        }
-
-        // Wait for page to load, then inject content script
-        setTimeout(() => {
-          chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ["content.js"],
-          }).then(() => {
-            console.log('Content script injected successfully');
-
-            chrome.tabs.sendMessage(tab.id, {
-              action: "updateStatusHeader",
-              current: index + 1,
-              total: connections.length
-            });
-            
-            // Wait a bit more for content script to be ready
-            setTimeout(() => {
-              // Send parameters to content.js
-              chrome.tabs.sendMessage(tab.id, {
-                action: "sendConnectionRequest",
-                note: note || "Hi, I'd like to connect with you on LinkedIn.",
-                index,
-                total: connections.length,
-                name: extractNameFromUrl(url),
-              }, (response) => {
-                console.log('Content script response:', response);
-                if (chrome.runtime.lastError) {
-                  console.error('Message error:', chrome.runtime.lastError);
-                }
-              });
-            }, 1000);
-            
-          }).catch((error) => {
-            console.error('Script injection error:', error);
-          });
-
-          // Close tab and move to next after delay
-          setTimeout(() => {
-            chrome.tabs.remove(tab.id);
-            index++;
-            next();
-          }, 12000); // Reduced from 15000 to 12000
-          
-        }, 3000); // Wait for LinkedIn page to load
-      });
-    }
-
-    next();
-    return true; // Keep the message channel open for async response
+class ExtensionState {
+  constructor() {
+    this.stopRequested = false;
+    this.currentResults = [];
+    this.currentAction = null;
   }
-});
 
-function extractNameFromUrl(url) {
-  const match = url.match(/linkedin\.com\/in\/([^\/]+)/);
-  return match ? match[1].replace(/-/g, ' ') : 'Unknown Profile';
+  reset() {
+    this.stopRequested = false;
+    this.currentResults = [];
+    this.currentAction = null;
+  }
+
+  addResult(result) {
+    this.currentResults.push(result);
+  }
+
+  requestStop() {
+    this.stopRequested = true;
+    Logger.info('Stop requested by user');
+  }
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const state = new ExtensionState();
+
+// ============================================================================
+// ACTION HANDLERS REGISTRY
+// ============================================================================
+
+const ACTION_HANDLERS = {
+  likePostsOnLinkedIn: handleLikePosts,
+  commentOnLinkedInPost: handleCommentPosts,
+  connectMultiple: handleConnections,
+  sendMessage: handleMessages,
+  viewProfiles: handleProfileViews,
+  checkConnectionStatus: handleStatusChecks,
+  stopProcessing: handleStop
+};
+
+// ============================================================================
+// MAIN MESSAGE LISTENER
+// ============================================================================
+
+console.log("Service worker started successfully!");
+
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "stopProcessing") {
-    console.log("Stop signal received from panel");
-    stopRequested = true;
-    sendResponse({ status: "stopping" });
+  if (message.action === "ping") {
+    sendResponse({ status: "ok" });
+  }
+  return true;
+});
+
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  const handler = ACTION_HANDLERS[message.action];
+  
+  if (!handler) {
+    sendResponse({ 
+      status: 'error', 
+      message: `Unknown action: ${message.action}` 
+    });
+    return false;
+  }
+
+  // Execute handler asynchronously
+  handler(message, sendResponse).catch(error => {
+    Logger.error(`Handler failed for ${message.action}:`, error);
+    sendResponse({ 
+      status: 'error', 
+      message: error.message 
+    });
+  });
+
+  return true; // Keep channel open for async response
+});
+
+// Internal message listener (for popup/content scripts)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'stopProcessing') {
+    handleStop(message, sendResponse);
+    return false;
   }
 });
+
+// ============================================================================
+// ACTION HANDLER IMPLEMENTATIONS
+// ============================================================================
+
+async function handleLikePosts(message, sendResponse) {
+  const { posts } = message;
+  
+  if (!Array.isArray(posts) || posts.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid posts data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'like';
+
+  const processor = new ActionProcessor({
+    items: posts,
+    action: 'like_post',
+    contentScript: 'content.js',
+    getItemData: (post, index, total) => ({
+      action: 'like_post',
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+
+async function handleCommentPosts(message, sendResponse) {
+  const { targets } = message;
+  
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid targets data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'comment';
+
+  const processor = new ActionProcessor({
+    items: targets,
+    action: 'comment_on_post',
+    contentScript: 'content.js',
+    getItemData: (item, index, total) => ({
+      action: 'comment_on_post',
+      comment: item.comment || 'Great post!',
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+
+async function handleConnections(message, sendResponse) {
+  const { connections } = message;
+  
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid connections data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'connect';
+
+  const processor = new ActionProcessor({
+    items: connections,
+    action: 'sendConnectionRequest',
+    contentScript: 'content.js',
+    pageLoadDelay: CONFIG.delays.pageLoad,
+    getItemData: (item, index, total) => ({
+      action: 'sendConnectionRequest',
+      note: item.note || CONFIG.defaults.connectionNote,
+      id: item.id,
+      current: index + 1,
+      total,
+      url: item.url
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+
+async function handleMessages(message, sendResponse) {
+  const { targets } = message;
+  
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid targets data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'message';
+
+  const processor = new ActionProcessor({
+    items: targets,
+    action: 'sendLinkedInMessage',
+    contentScript: 'content.js',
+    pageLoadDelay: CONFIG.delays.pageLoad,
+    getItemData: (item, index, total) => ({
+      action: 'sendLinkedInMessage',
+      message: item.message,
+      id: item.id,
+      current: index + 1,
+      total,
+      url: item.url
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+
+async function handleProfileViews(message, sendResponse) {
+  const { urls } = message;
+  
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid urls data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'view';
+
+  const processor = new ActionProcessor({
+    items: urls,
+    action: 'viewProfile', // Changed from null to 'viewProfile'
+    contentScript: 'content.js',
+    skipContentScriptAction: false, // Changed to false so content script runs
+    pageLoadDelay: CONFIG.delays.profileView + Math.random() * 2000,
+    getItemData: (item, index, total) => ({
+      action: 'viewProfile', // Pass action to content script
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ ...result, id: item.id, url: item.url });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+// async function handleProfileViews(message, sendResponse) {
+//   const { urls } = message;
+  
+//   if (!Array.isArray(urls) || urls.length === 0) {
+//     return sendResponse({ 
+//       status: 'error', 
+//       message: 'Invalid urls data' 
+//     });
+//   }
+
+//   state.reset();
+//   state.currentAction = 'view';
+
+//   const processor = new ActionProcessor({
+//     items: urls,
+//     action: null, // View only, no content script action needed
+//     contentScript: 'content.js',
+//     skipContentScriptAction: true,
+//     pageLoadDelay: CONFIG.delays.profileView + Math.random() * 2000,
+//     getItemData: (item) => ({}),
+//     onItemComplete: (result, item) => {
+//       state.addResult({ 
+//         id: item.id, 
+//         url: item.url, 
+//         status: 'SUCCESS' ,
+//         value: getUserMessage('viewProfile', 'SUCCESS') 
+//       });
+//     },
+//     shouldStop: () => state.stopRequested
+//   });
+
+//   const results = await processor.processAll();
+  
+//   sendResponse({
+//     status: state.stopRequested ? 'stopped' : 'done',
+//     results
+//   });
+// }
+
+async function handleStatusChecks(message, sendResponse) {
+  const { connections } = message;
+  
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return sendResponse({ 
+      status: 'error', 
+      message: 'Invalid connections data' 
+    });
+  }
+
+  state.reset();
+  state.currentAction = 'status_check';
+
+  const processor = new ActionProcessor({
+    items: connections,
+    action: 'checkConnectionStatus',
+    contentScript: 'content.js',
+    getItemData: (item, index, total) => ({
+      action: 'checkConnectionStatus',
+      current: index + 1,
+      total
+    }),
+    onItemComplete: (result, item) => {
+      state.addResult({ 
+        id: item.id, 
+        url: item.url,
+        status: result.status,
+        message: result.message || ''
+      });
+    },
+    shouldStop: () => state.stopRequested
+  });
+
+  const results = await processor.processAll();
+  
+  sendResponse({
+    status: state.stopRequested ? 'stopped' : 'done',
+    results
+  });
+}
+
+async function handleStop(message, sendResponse) {
+  state.requestStop();
+  sendResponse({ status: 'stopping' });
+}
+
+// ============================================================================
+// LIFECYCLE
+// ============================================================================
+
+Logger.info('LinkedIn Automation Extension - Background service worker loaded');

@@ -1,7 +1,190 @@
 <!DOCTYPE html>
-<html>
-  <body>
-    <button id="connectBtn">Send Connect</button>
-    <script src="popup.js"></script>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncGTM - LinkedIn Automation</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+        width: 500px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #ffffff;
+        border: none;
+    }
+
+
+    .header {
+      display: flex;
+      align-items: center;
+      padding: 6px;
+      background: linear-gradient(135deg, #7e22ce 0%, #004182 100%);
+      color: white;
+      border-bottom: 2px solid #7e22ce;
+    }
+
+    .logo {
+      width: 25px;
+      height: 25px;
+      margin-right: 8px;
+      margin-left: 4px;
+      border-radius: 8px;
+      background: white;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .header-text {
+      flex: 1;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .header-subtitle {
+      font-size: 10px;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
+    .content {
+     padding: 14px;
+    }
+
+
+    .description {
+      font-size: 13px;
+      line-height: 1.4;
+      color: #555;
+      margin-bottom: 10px;
+    }
+
+    .description strong {
+      color: #7e22ce;
+      font-weight: 550;
+    }
+
+    .learn-more {
+      display: inline-block;
+      /* color: #7e22ce; */
+      color: #0a66c2;
+
+      text-decoration: none;
+      font-weight: 550;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    .learn-more:hover {
+      border-bottom-color: #0a66c2;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      color: white;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #7e22ce 0%, #004182 100%);
+
+    }
+
+    .btn-primary:hover {
+      background: #004182;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(10, 102, 194, 0.3);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #0a66c2;
+      border: 2px solid #0a66c2;
+    }
+
+    .btn-secondary:hover {
+      background: #f0f7ff;
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .footer {
+      padding: 10px 16px;
+      background: #f8f9fa;
+      border-top: 1px solid #e0e0e0;
+      text-align: center;
+    }
+
+    .footer-text {
+      font-size: 11px;
+      color: #999;
+    }
+
+    .footer-link {
+      color: #0a66c2;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .footer-link:hover {
+      text-decoration: underline;
+    }
+
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <img src="icons/128.png" alt="SyncGTM Logo" class="logo">
+    <div class="header-text">
+      <div class="header-title">SyncGTM</div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <!-- Description -->
+    <div class="description">
+      Use <strong>SyncGTM</strong> extension to automate LinkedIn actions in your current browser. 
+      <a href="https://syncgtm.com/privacy-policy/" target="_blank" class="learn-more">Learn more</a>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+    <a href="https://syncgtm.com/" class="btn btn-primary"  target="_blank" id="openDashboard">
+      <span>Go to App</span>
+    </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-text">
+      Need help? <a href="https://syncgtm.com/book-demo/" target="_blank" class="footer-link">Contact Support</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
 </html>
