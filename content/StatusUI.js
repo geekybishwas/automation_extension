@@ -204,7 +204,6 @@ export class StatusUI {
               width: 18px;
               height: 18px;
               background-color: transparent;
-              border: 2px solid #dc3545;
               border-radius: 4px;
               cursor: pointer;
               display: flex;
@@ -295,6 +294,7 @@ export class StatusUI {
 
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'stopProcessing' });
         this.remove();
       });
     }
