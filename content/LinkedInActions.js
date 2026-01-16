@@ -26,18 +26,39 @@ export class LinkedInActions {
       if (LinkedInDOM.hasPendingButton()) {
         return {
           status: CONFIG.statuses.PENDING,
-          message: 'Invitation already pending'
+          message: 'Pending'
         };
       }
 
       // Find Connect button
       const connectInfo = await LinkedInDOM.findConnectButton();
+
       if (!connectInfo) {
+        // Check if already connected
+        const connected = await LinkedInDOM.isConnected();
+
+        if (connected) {
+          return {
+            status: CONFIG.statuses.CONNECTED,
+            message: 'Already connected'
+          };
+        }
+
+        // Check for pending
+        if (LinkedInDOM.hasPendingButton()) {
+          return {
+            status: CONFIG.statuses.PENDING,
+            message: 'Pending'
+          };
+        }
+
+        // True failure
         return {
           status: CONFIG.statuses.FAILED,
-          message: 'No Connect button available'
+          message: 'Connect button not available'
         };
       }
+
 
       // Click Connect
       await LinkedInDOM.clickElement(connectInfo.button);

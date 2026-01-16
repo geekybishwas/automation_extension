@@ -183,58 +183,103 @@ export class StatusUI {
     }
 
     panel.innerHTML = `
-      <div id="${this.HEADER_ID}" style="
-        padding: 8px;
-        border-bottom: 1px solid #f0f0f0;
-        font-weight: 600;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background-color: #f8f8f8;
-        color: #333;
-        flex-direction: column;
-      ">
-        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-          <div style="display: flex; align-items: center;">
-            ${logoHTML}
-          </div>
-          <div style="display: flex; align-items: center;">
-            <button id="stop-btn" style="
-              margin-right: 8px;
-              width: 18px;
-              height: 18px;
-              background-color: transparent;
-              border-radius: 4px;
-              cursor: pointer;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 0;
-              color: #dc3545;
-            ">⏹</button>
-            <span id="close-panel" style="
-              cursor: pointer;
-              font-size: 1.3em;
-              color: #777;
-              padding: 2px 7px;
-              border-radius: 4px;
-              transition: background-color 0.2s ease;
-            ">×</span>
-          </div>
-        </div>
-        <div id="${this.PROGRESS_ID}" style="
-          font-size: 12px;
-          color: #555;
-          margin-top: 4px;
-          width: 100%;
-        "></div>
+  <div id="${this.HEADER_ID}" style="
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    font-weight: 600;
+    background-color: #f8f8f8;
+    color: #333;
+  ">
+    <!-- Top row -->
+    <div style="
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    ">
+      <!-- Logo -->
+      <div style="display: flex; align-items: center;">
+        ${logoHTML}
       </div>
-      <div id="${this.LIST_ID}" style="
-        max-height: 300px;
-        overflow-y: auto;
-        padding: 8px;
-      "></div>
-    `;
+
+      <!-- Action buttons -->
+      <div style="
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      ">
+        <button
+          id="stop-btn"
+          title="Stop processing"
+          aria-label="Stop processing"
+          style="
+            width: 28px;
+            height: 28px;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #dc3545;
+            font-size: 14px;
+            border: 1px solid transparent;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+          "
+          onmouseenter="this.style.background='#fdecea'; this.style.borderColor='#f5c6cb';"
+          onmouseleave="this.style.background='transparent'; this.style.borderColor='transparent';"
+        >
+          ⏹
+        </button>
+
+        <button
+          id="close-panel"
+          title="Collapse panel"
+          aria-label="Collapse panel"
+          style="
+            width: 32px;
+            height: 32px;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 16px;
+            border: 1px solid transparent;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+          "
+          onmouseenter="this.style.background='#e9ecef'; this.style.borderColor='#ced4da';"
+          onmouseleave="this.style.background='transparent'; this.style.borderColor='transparent';"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress text -->
+    <div
+      id="${this.PROGRESS_ID}"
+      style="
+        font-size: 12px;
+        color: #555;
+        margin-top: 4px;
+        width: 100%;
+      "
+    ></div>
+  </div>
+
+  <div
+    id="${this.LIST_ID}"
+    style="
+      max-height: 300px;
+      overflow-y: auto;
+      padding: 8px;
+    "
+  ></div>
+`;
+
 
     return panel;
   }
@@ -266,12 +311,15 @@ export class StatusUI {
         100% { transform: rotate(360deg); }
       }
 
-      #${this.PANEL_ID} #close-panel:hover {
-        background-color: #e0e0e0;
+      #${this.PANEL_ID} #stop-btn:hover {
+        background-color: rgba(220, 53, 69, 0.15);
+        border-color: #dc3545;
       }
 
-      #${this.PANEL_ID} #stop-btn:hover {
-        background-color: rgba(220, 53, 69, 0.1);
+      #${this.PANEL_ID} #close-panel:hover {
+        background-color: #e8e8e8;
+        border-color: #999;
+        color: #555;
       }
     `;
 
@@ -295,7 +343,6 @@ export class StatusUI {
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
         chrome.runtime.sendMessage({ action: 'stopProcessing' });
-        this.remove();
       });
     }
   }

@@ -131,6 +131,35 @@ export class LinkedInDOM {
     element.click();
   }
 
+
+  /**
+ * Check if profile is already connected
+ */
+static async isConnected() {
+    const container = document.querySelector(CONFIG.selectors.profileActions);
+    if (!container) return false;
+
+    // Fast check: Message / Pending / Following
+    const indicators = ['message', 'pending', 'following'];
+
+    const buttons = container.querySelectorAll(
+      'button, div[role="button"], a[role="button"]'
+    );
+
+    const directIndicator = Array.from(buttons).some(btn => {
+      if (!this.isVisible(btn)) return false;
+      const text = btn.innerText.trim().toLowerCase();
+      return indicators.includes(text);
+    });
+
+    if (directIndicator) return true;
+
+    // Deep check: "Remove connection" inside More menu
+    const removeBtn = await this.findRemoveConnectionButton();
+    return !!removeBtn;
+  }
+
+
   /**
    * Type text into element naturally
    */
