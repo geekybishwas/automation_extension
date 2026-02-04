@@ -2,7 +2,7 @@
 // BACKGROUND SERVICE WORKER - LinkedIn Automation Extension
 // ============================================================================
 
-import { CONFIG,getUserMessage } from './config.js';
+import { CONFIG, getUserMessage } from './config.js';
 import { TabManager } from './modules/TabManager.js';
 import { ActionProcessor } from './modules/ActionProcessor.js';
 import { Logger } from './modules/Logger.js';
@@ -66,12 +66,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (message.action === 'stopProcessing') {
+    handleStop(message, sendResponse);
+    return false;
+  }
+
   const handler = ACTION_HANDLERS[message.action];
-  
+
   if (!handler) {
-    sendResponse({ 
-      status: 'error', 
-      message: `Unknown action: ${message.action}` 
+    sendResponse({
+      status: 'error',
+      message: `Unknown action: ${message.action}`
     });
     return false;
   }
@@ -79,9 +84,9 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   // Execute handler asynchronously
   handler(message, sendResponse).catch(error => {
     Logger.error(`Handler failed for ${message.action}:`, error);
-    sendResponse({ 
-      status: 'error', 
-      message: error.message 
+    sendResponse({
+      status: 'error',
+      message: error.message
     });
   });
 
@@ -102,11 +107,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleLikePosts(message, sendResponse) {
   const { posts } = message;
-  
+
   if (!Array.isArray(posts) || posts.length === 0) {
-    return sendResponse({ 
-      status: 'error', 
-      message: 'Invalid posts data' 
+    return sendResponse({
+      status: 'error',
+      message: 'Invalid posts data'
     });
   }
 
@@ -129,7 +134,7 @@ async function handleLikePosts(message, sendResponse) {
   });
 
   const results = await processor.processAll();
-  
+
   sendResponse({
     status: state.stopRequested ? 'stopped' : 'done',
     results
@@ -138,11 +143,11 @@ async function handleLikePosts(message, sendResponse) {
 
 async function handleCommentPosts(message, sendResponse) {
   const { targets } = message;
-  
+
   if (!Array.isArray(targets) || targets.length === 0) {
-    return sendResponse({ 
-      status: 'error', 
-      message: 'Invalid targets data' 
+    return sendResponse({
+      status: 'error',
+      message: 'Invalid targets data'
     });
   }
 
@@ -166,7 +171,7 @@ async function handleCommentPosts(message, sendResponse) {
   });
 
   const results = await processor.processAll();
-  
+
   sendResponse({
     status: state.stopRequested ? 'stopped' : 'done',
     results
@@ -175,11 +180,11 @@ async function handleCommentPosts(message, sendResponse) {
 
 async function handleConnections(message, sendResponse) {
   const { connections } = message;
-  
+
   if (!Array.isArray(connections) || connections.length === 0) {
-    return sendResponse({ 
-      status: 'error', 
-      message: 'Invalid connections data' 
+    return sendResponse({
+      status: 'error',
+      message: 'Invalid connections data'
     });
   }
 
@@ -206,7 +211,7 @@ async function handleConnections(message, sendResponse) {
   });
 
   const results = await processor.processAll();
-  
+
   sendResponse({
     status: state.stopRequested ? 'stopped' : 'done',
     results
@@ -215,11 +220,11 @@ async function handleConnections(message, sendResponse) {
 
 async function handleMessages(message, sendResponse) {
   const { targets } = message;
-  
+
   if (!Array.isArray(targets) || targets.length === 0) {
-    return sendResponse({ 
-      status: 'error', 
-      message: 'Invalid targets data' 
+    return sendResponse({
+      status: 'error',
+      message: 'Invalid targets data'
     });
   }
 
@@ -246,7 +251,7 @@ async function handleMessages(message, sendResponse) {
   });
 
   const results = await processor.processAll();
-  
+
   sendResponse({
     status: state.stopRequested ? 'stopped' : 'done',
     results
@@ -255,11 +260,11 @@ async function handleMessages(message, sendResponse) {
 
 async function handleProfileViews(message, sendResponse) {
   const { urls } = message;
-  
+
   if (!Array.isArray(urls) || urls.length === 0) {
-    return sendResponse({ 
-      status: 'error', 
-      message: 'Invalid urls data' 
+    return sendResponse({
+      status: 'error',
+      message: 'Invalid urls data'
     });
   }
 
@@ -268,12 +273,12 @@ async function handleProfileViews(message, sendResponse) {
 
   const processor = new ActionProcessor({
     items: urls,
-    action: 'viewProfile', // Changed from null to 'viewProfile'
+    action: 'viewProfile',
     contentScript: 'content.js',
-    skipContentScriptAction: false, // Changed to false so content script runs
+    skipContentScriptAction: false,
     pageLoadDelay: CONFIG.delays.profileView + Math.random() * 2000,
     getItemData: (item, index, total) => ({
-      action: 'viewProfile', // Pass action to content script
+      action: 'viewProfile',
       current: index + 1,
       total
     }),
@@ -284,7 +289,7 @@ async function handleProfileViews(message, sendResponse) {
   });
 
   const results = await processor.processAll();
-  
+
   sendResponse({
     status: state.stopRequested ? 'stopped' : 'done',
     results
@@ -292,7 +297,7 @@ async function handleProfileViews(message, sendResponse) {
 }
 // async function handleProfileViews(message, sendResponse) {
 //   const { urls } = message;
-  
+
 //   if (!Array.isArray(urls) || urls.length === 0) {
 //     return sendResponse({ 
 //       status: 'error', 
@@ -322,7 +327,7 @@ async function handleProfileViews(message, sendResponse) {
 //   });
 
 //   const results = await processor.processAll();
-  
+
 //   sendResponse({
 //     status: state.stopRequested ? 'stopped' : 'done',
 //     results
@@ -331,11 +336,11 @@ async function handleProfileViews(message, sendResponse) {
 
 async function handleStatusChecks(message, sendResponse) {
   const { connections } = message;
-  
+
   if (!Array.isArray(connections) || connections.length === 0) {
-    return sendResponse({ 
-      status: 'error', 
-      message: 'Invalid connections data' 
+    return sendResponse({
+      status: 'error',
+      message: 'Invalid connections data'
     });
   }
 
@@ -352,8 +357,8 @@ async function handleStatusChecks(message, sendResponse) {
       total
     }),
     onItemComplete: (result, item) => {
-      state.addResult({ 
-        id: item.id, 
+      state.addResult({
+        id: item.id,
         url: item.url,
         status: result.status,
         message: result.message || ''
@@ -363,7 +368,7 @@ async function handleStatusChecks(message, sendResponse) {
   });
 
   const results = await processor.processAll();
-  
+
   sendResponse({
     status: state.stopRequested ? 'stopped' : 'done',
     results

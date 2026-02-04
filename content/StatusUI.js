@@ -17,22 +17,21 @@ export class StatusUI {
    */
   static create() {
     if (document.getElementById(this.PANEL_ID)) {
-      return; // Already exists
+      return;
     }
 
     const panel = this._createPanelElement();
-    
+
     // Hide panel initially
     panel.style.opacity = '0';
     panel.style.transform = 'translateY(20px)';
     panel.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-    
+
     document.body.appendChild(panel);
 
     this._injectStyles();
     this._attachEventListeners();
-    
-    // Don't show yet - wait for content to be added
+
   }
 
   /**
@@ -103,10 +102,10 @@ export class StatusUI {
     `;
 
     list.appendChild(item);
-    
+
     // Show panel now that content is added
     this.show();
-    
+
     return itemId;
   }
 
@@ -173,12 +172,12 @@ export class StatusUI {
     `;
 
     // Try to get logo URL, fallback to emoji if fails
-    let logoHTML = '🔗'; // Fallback emoji
+    let logoHTML = '🔗';
     try {
       const logoURL = chrome.runtime.getURL('icons/128.png');
       logoHTML = `<img src="${logoURL}" alt="Extension" style="width: 24px; height: 24px; margin-right: 8px; border-radius: 4px;" onerror="this.style.display='none'; this.parentElement.innerHTML='🔗';" />`;
     } catch (e) {
-      // If chrome.runtime.getURL fails, use emoji
+      // If chrome.runtime.getURL fails
       logoHTML = '<span style="font-size: 24px; margin-right: 8px;">🔗</span>';
     }
 
@@ -203,58 +202,69 @@ export class StatusUI {
       </div>
 
       <!-- Action buttons -->
-      <div style="
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      ">
-        <button
-          id="stop-btn"
-          title="Stop processing"
-          aria-label="Stop processing"
+      <div style="display: flex; align-items: center; gap: 4px;">
+      <button
+        id="stop-btn"
+        title="Stop"
+        aria-label="Stop execution"
+        style="
+          width: 18px;
+          height: 18px;
+          background: #dc2626;
+          border: none;
+          border-radius: 5px;
+          padding: 4px; /* was 3px */
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        "
+      >
+        <div
           style="
-            width: 28px;
-            height: 28px;
-            background: transparent;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #dc3545;
-            font-size: 14px;
-            border: 1px solid transparent;
-            transition: background-color 0.2s ease, border-color 0.2s ease;
+            width: 12px;      /* smaller */
+            height: 12px;     /* smaller */
+            background: #ffffff;
+            border-radius: 3px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.15);
           "
-          onmouseenter="this.style.background='#fdecea'; this.style.borderColor='#f5c6cb';"
-          onmouseleave="this.style.background='transparent'; this.style.borderColor='transparent';"
-        >
-          ⏹
-        </button>
-
+        ></div>
+      </button>
         <button
-          id="close-panel"
-          title="Collapse panel"
-          aria-label="Collapse panel"
-          style="
-            width: 32px;
-            height: 32px;
-            background: transparent;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #555;
-            font-size: 16px;
-            border: 1px solid transparent;
-            transition: background-color 0.2s ease, border-color 0.2s ease;
-          "
-          onmouseenter="this.style.background='#e9ecef'; this.style.borderColor='#ced4da';"
-          onmouseleave="this.style.background='transparent'; this.style.borderColor='transparent';"
+        id="close-panel"
+        title="Close"
+        aria-label="Close panel"
+        style="
+          width: 24px;
+          height: 24px;
+          background: transparent;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #666;
+          transition: all 0.15s ease;
+        "
+        onmouseenter="this.style.background='#f3f4f6'; this.style.color='#374151';"
+        onmouseleave="this.style.background='transparent'; this.style.color='#666';"
         >
-          ×
-        </button>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="2" y1="2" x2="10" y2="10" />
+          <line x1="10" y1="2" x2="2" y2="10" />
+        </svg>
+      </button>
       </div>
     </div>
 
@@ -279,8 +289,6 @@ export class StatusUI {
     "
   ></div>
 `;
-
-
     return panel;
   }
 
@@ -311,15 +319,12 @@ export class StatusUI {
         100% { transform: rotate(360deg); }
       }
 
-      #${this.PANEL_ID} #stop-btn:hover {
-        background-color: rgba(220, 53, 69, 0.15);
-        border-color: #dc3545;
+      #${this.PANEL_ID} #stop-btn:active {
+        transform: scale(0.95);
       }
 
-      #${this.PANEL_ID} #close-panel:hover {
-        background-color: #e8e8e8;
-        border-color: #999;
-        color: #555;
+      #${this.PANEL_ID} #close-panel:active {
+        transform: scale(0.95);
       }
     `;
 
